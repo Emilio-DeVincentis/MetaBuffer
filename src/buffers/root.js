@@ -21,11 +21,13 @@ export const rootBuffer = {
   ],
   apply: (view) => {
     const patch = {};
+    const signals = [];
     let trace = null;
 
     // Coordination: Root observes needs_analysis signal
     if (view.state.needs_analysis) {
       patch.needs_analysis = false;
+      signals.push({ kind: 'REQUEST_ANALYSIS', target: 3 });
     }
 
     const command = view.state.pending_command;
@@ -109,6 +111,6 @@ export const rootBuffer = {
       patch.pending_command = null;
     }
 
-    return { delta: { patch }, trace };
+    return { delta: { patch, signals }, trace };
   }
 };

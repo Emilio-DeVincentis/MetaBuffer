@@ -10,13 +10,22 @@
  */
 
 /**
+ * @typedef {Object} Signal
+ * @property {string} kind - The type of signal.
+ * @property {number|null} [target] - The ID of the buffer this signal is intended for.
+ * @property {unknown} [payload] - Optional data payload.
+ */
+
+/**
  * @typedef {Object} ContextDelta
  * @property {Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>} patch - A partial update to the context state.
+ * @property {Signal[]} [signals] - Intentions emitted by the buffer to trigger reactions in others.
  */
 
 /**
  * @typedef {Object} ContextView
  * @property {Readonly<Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>>} state - A read-only view of the context, limited by scope.
+ * @property {Signal[]} [incomingSignals] - Signals received from other buffers in the same dispatch.
  */
 
 /**

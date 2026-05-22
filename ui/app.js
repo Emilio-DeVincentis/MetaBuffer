@@ -6,6 +6,8 @@ import { jsAnalyzerBuffer } from '../src/buffers/jsAnalyzer.js';
 import { agentBuffer } from '../src/buffers/agent.js';
 import { executorBuffer } from '../src/buffers/executor.js';
 import { spatialInspectorBuffer } from '../src/buffers/inspector.js';
+import { transformerBuffer } from '../src/buffers/transformer.js';
+import { outputBuffer } from '../src/buffers/output.js';
 import { projectCode, projectDiagnostics, projectTerminal, projectWorkspace } from '../src/core/projections.js';
 import { hydrateState } from '../src/core/serialization.js';
 
@@ -17,6 +19,8 @@ runtime.registerBuffer(jsAnalyzerBuffer);
 runtime.registerBuffer(agentBuffer);
 runtime.registerBuffer(executorBuffer);
 runtime.registerBuffer(spatialInspectorBuffer);
+runtime.registerBuffer(transformerBuffer);
+runtime.registerBuffer(outputBuffer);
 
 const bridge = new CommandBridge(runtime);
 
@@ -300,10 +304,20 @@ async function boot() {
 
     if (!hydrated) {
         runtime.initialize();
-        // Create initial editor
+        // Create initial editor (Source)
         bridge.handleHostEvent({
             kind: 'COMMAND',
             payload: { type: 'CREATE_BUFFER', kind: 'editor', initialContent: '// Welcome to MetaBuffer\n' }
+        });
+        // Create Transformer
+        bridge.handleHostEvent({
+            kind: 'COMMAND',
+            payload: { type: 'CREATE_BUFFER', kind: 'editor', initialContent: '' }
+        });
+        // Create Output
+        bridge.handleHostEvent({
+            kind: 'COMMAND',
+            payload: { type: 'CREATE_BUFFER', kind: 'editor', initialContent: '' }
         });
     }
 

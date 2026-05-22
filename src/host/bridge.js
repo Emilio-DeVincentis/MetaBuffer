@@ -142,8 +142,9 @@ export class CommandBridge {
 
     // 4. Check for Analysis Signal
     if (context.needs_analysis) {
-        // Dispatch analyzer automatically if needed
-        this.runtime.dispatch(3); // jsAnalyzer
+        // In Phase 4, analysis is a reactive side-effect of Root or Editor.
+        // We dispatch Root to trigger the signal-based reaction chain.
+        this.runtime.dispatch(1); // Root
     }
   }
 

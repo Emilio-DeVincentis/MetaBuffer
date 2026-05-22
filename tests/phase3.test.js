@@ -25,10 +25,11 @@ describe('MetaBufferRuntime - Phase 3 (JS Analysis)', () => {
   it('should detect unbalanced braces', () => {
     runtime.setContext({
       ...runtime.getContext(),
-      js_source_code: 'function test() { if (true) { }' // Missing one '}'
+      js_source_code: 'function test() { if (true) { }', // Missing one '}'
+      needs_analysis: true
     });
 
-    runtime.dispatch(3); // Dispatch Analyzer
+    runtime.dispatch(1); // Trigger Root -> Signal -> Analyzer
 
     const diagnostics = runtime.getContext().diagnostics;
     expect(diagnostics['js-analyzer']).toBeDefined();
@@ -41,19 +42,18 @@ describe('MetaBufferRuntime - Phase 3 (JS Analysis)', () => {
     expect(runtime.getTraceStack().length).toBe(0);
   });
 
-  it('should flow signals from Editor to Root', () => {
+  it('should flow signals from Editor to Root and trigger Analyzer', () => {
     // 1. Type in Editor
     runtime.setContext({ ...runtime.getContext(), incoming_input: '{' });
     runtime.dispatch(2);
 
+    // needs_analysis is true because Editor set it
     expect(runtime.getContext().needs_analysis).toBe(true);
 
-    // 2. Root observes and clears signal
+    // 2. Dispatch Root -> This should trigger Analyzer via signal in the same pass
     runtime.dispatch(1);
-    expect(runtime.getContext().needs_analysis).toBe(false);
 
-    // 3. Analyzer is then dispatched (by external coordination)
-    runtime.dispatch(3);
+    expect(runtime.getContext().needs_analysis).toBe(false);
     expect(runtime.getContext().diagnostics['js-analyzer'].length).toBe(1);
   });
 
@@ -61,10 +61,11 @@ describe('MetaBufferRuntime - Phase 3 (JS Analysis)', () => {
     // Pre-fill with another producer's data
     runtime.setContext({
       ...runtime.getContext(),
-      diagnostics: { 'other-tool': ['error'] }
+      diagnostics: { 'other-tool': ['error'] },
+      needs_analysis: true
     });
 
-    runtime.dispatch(3);
+    runtime.dispatch(1);
 
     const diag = runtime.getContext().diagnostics;
     expect(diag['other-tool']).toEqual(['error']);

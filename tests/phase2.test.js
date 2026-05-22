@@ -58,14 +58,18 @@ describe('MetaBufferRuntime - Phase 2 (Default World)', () => {
     expect(runtime.getContext().incoming_input).toBeNull();
 
     // Simulate typing 'b'
+    const ctx = runtime.getContext();
     runtime.setContext({
-      ...runtime.getContext(),
+      ...ctx,
       incoming_input: 'b'
     });
     runtime.dispatch(2);
 
     expect(runtime.getContext().js_source_code).toBe('ab');
     expect(runtime.getTraceStack().length).toBe(0); // Still 0 traces from typing
+  });
+
+  it('should maintain causal link between structural changes', () => {
   });
 
   it('should maintain causal link between structural changes', () => {

@@ -99,76 +99,110 @@ export class MetaBufferRuntime {
   }
 
   /**
-   * Dispatches a transition for a specific MetaBuffer.
-   * @param {number} bufferId
+   * Dispatches a transition for a specific MetaBuffer, triggering reactions.
+   * @param {number} triggerBufferId
    * @returns {ExecutionResult}
    */
-  dispatch(bufferId) {
+  dispatch(triggerBufferId) {
     try {
-      const buffer = this.buffers.get(bufferId);
-      if (!buffer) {
+      const triggerBuffer = this.buffers.get(triggerBufferId);
+      if (!triggerBuffer) {
         return {
           ok: false,
-          error: { code: 'BUFFER_NOT_FOUND', message: `MetaBuffer with ID ${bufferId} not found.` }
+          error: { code: 'BUFFER_NOT_FOUND', message: `MetaBuffer with ID ${triggerBufferId} not found.` }
         };
       }
 
-      // 1. Prepare ContextView (Scope Isolation & Structural Sharing by contract)
-      /** @type {Record<string, unknown>} */
-      const viewState = {};
-      for (const key of buffer.scope) {
-        if (Object.prototype.hasOwnProperty.call(this.context, key)) {
-          viewState[key] = this.context[key];
-        }
-      }
+      // 1. Snapshot the initial state
+      const snapshot = Object.freeze({ ...this.context });
 
+      // 2. Initial Dispatch (Trigger)
       /** @type {ContextView} */
-      const view = { state: Object.freeze(viewState) };
+      const triggerView = {
+          state: this._prepareViewState(triggerBuffer, snapshot),
+          incomingSignals: [],
+          // @ts-ignore
+          isTrigger: true
+      };
+      const triggerResult = triggerBuffer.apply(triggerView);
+      const triggerDelta = triggerResult.delta || { patch: {} };
 
-      // 2. Apply MetaBuffer logic (Protective Execution)
-      const result = buffer.apply(view);
-      const delta = result.delta;
-      const trace = result.trace;
+      const triggerPatch = this._validatePatch(triggerBuffer, triggerDelta.patch);
+      const aggregatedPatch = { ...triggerPatch };
+      const emittedSignals = triggerDelta.signals || [];
+      const primaryTrace = triggerResult.trace;
 
-      // 3. Atomicity: Prepare patch and trace before committing
-      /** @type {Record<string, unknown>} */
-      const validPatch = {};
-      if (delta && delta.patch) {
-        for (const key in delta.patch) {
-          if (buffer.scope.includes(key)) {
-            validPatch[key] = delta.patch[key];
-          } else {
-            console.warn(`MetaBuffer ${bufferId} attempted to write out-of-scope key: ${key}`);
-          }
+      // 3. Deterministic Reaction Pass
+      const bufferIds = Array.from(this.buffers.keys()).sort((a, b) => a - b);
+      for (const bufferId of bufferIds) {
+        if (bufferId === triggerBufferId) continue;
+
+        const buffer = this.buffers.get(bufferId);
+        if (!buffer) continue;
+
+        /** @type {ContextView} */
+        const view = {
+            state: this._prepareViewState(buffer, snapshot),
+            incomingSignals: emittedSignals.filter(s => s.target === bufferId || s.target === null),
+            // @ts-ignore
+            isTrigger: false
+        };
+
+        const reactionResult = buffer.apply(view);
+        const reactionDelta = reactionResult.delta;
+        if (reactionDelta && reactionDelta.patch) {
+            const reactionPatch = this._validatePatch(buffer, reactionDelta.patch);
+
+            // Fail-fast conflict detection
+            for (const key in reactionPatch) {
+                if (Object.prototype.hasOwnProperty.call(aggregatedPatch, key)) {
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'WRITE_CONFLICT',
+                            message: `Conflict on key '${key}' between buffer ${triggerBufferId} and ${bufferId}`,
+                            bufferId
+                        }
+                    };
+                }
+                aggregatedPatch[key] = reactionPatch[key];
+            }
+        }
+
+        if (reactionDelta && reactionDelta.signals) {
+            emittedSignals.push(...reactionDelta.signals);
         }
       }
 
+      // 4. Atomicity: Prepare Trace (One trace per dispatch)
       /** @type {Trace | null} */
-      let newTrace = null;
-      if (trace) {
+      let finalTrace = null;
+      if (primaryTrace) {
         const parentTrace = this.traceStack[this.traceStack.length - 1] || null;
-        newTrace = this._deepFreeze({
-          ...trace,
+        finalTrace = this._deepFreeze({
+          ...primaryTrace,
           id: this.nextTraceId++,
-          metaBufferId: buffer.id,
+          metaBufferId: triggerBuffer.id,
           parentTraceId: parentTrace ? parentTrace.id : null,
-          scope: [...buffer.scope],
-          delta: { patch: { ...validPatch } } // Capture delta for reconstruction
+          scope: [...triggerBuffer.scope],
+          delta: { patch: aggregatedPatch }
         });
       }
 
-      // 4. Commit State and Trace (Atomic Step)
-      for (const key in validPatch) {
-        this.context[key] = validPatch[key];
+      // 5. Atomic Commit
+      const newContext = { ...this.context };
+      for (const key in aggregatedPatch) {
+          this._setContextValue(newContext, key, aggregatedPatch[key]);
       }
+      this.context = newContext;
 
-      if (newTrace) {
-        this.traceStack.push(newTrace);
+      if (finalTrace) {
+        this.traceStack.push(finalTrace);
 
-        // 5. Snapshot logic: Every X structural traces
+        // Snapshot logic: Every X structural traces
         const structuralTraceCount = this.traceStack.length;
         if (structuralTraceCount % this.snapshotInterval === 0) {
-          this.snapshots.set(newTrace.id, this._deepFreeze({ ...this.context }));
+          this.snapshots.set(finalTrace.id, this._deepFreeze({ ...this.context }));
         }
       }
 
@@ -179,10 +213,70 @@ export class MetaBufferRuntime {
         error: {
           code: 'DISPATCH_FAILURE',
           message: e instanceof Error ? e.message : 'Unknown dispatch error',
-          bufferId
+          bufferId: triggerBufferId
         }
       };
     }
+  }
+
+  /**
+   * Helper to prepare isolated view state.
+   * @private
+   * @param {MetaBuffer} buffer
+   * @param {Record<string, unknown>} snapshot
+   */
+  _prepareViewState(buffer, snapshot) {
+      /** @type {Record<string, unknown>} */
+      const viewState = {};
+      for (const key of buffer.scope) {
+          if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
+              viewState[key] = snapshot[key];
+          }
+      }
+      return Object.freeze(viewState);
+  }
+
+  /**
+   * Helper to validate patch against scope.
+   * @private
+   * @param {MetaBuffer} buffer
+   * @param {Record<string, unknown>} patch
+   */
+  _validatePatch(buffer, patch) {
+      /** @type {Record<string, unknown>} */
+      const validPatch = {};
+      if (patch) {
+          for (const key in patch) {
+              const baseKey = key.split('.')[0];
+              if (buffer.scope.includes(baseKey) || buffer.scope.includes('*')) {
+                  validPatch[key] = patch[key];
+              } else {
+                  console.warn(`MetaBuffer ${buffer.id} attempted to write out-of-scope key: ${key}`);
+              }
+          }
+      }
+      return validPatch;
+  }
+
+  /**
+   * Internal helper to set context value, supporting dot-notation.
+   * @private
+   * @param {Record<string, any>} context
+   * @param {string} key
+   * @param {any} value
+   */
+  _setContextValue(context, key, value) {
+      if (key.includes('.')) {
+          const parts = key.split('.');
+          let curr = context;
+          for (let i = 0; i < parts.length - 1; i++) {
+              curr[parts[i]] = { ...curr[parts[i]] };
+              curr = curr[parts[i]];
+          }
+          curr[parts[parts.length - 1]] = value;
+      } else {
+          context[key] = value;
+      }
   }
 
   /**
