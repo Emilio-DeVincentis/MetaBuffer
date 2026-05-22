@@ -36,10 +36,9 @@ describe('MetaBufferRuntime - Phase 3 (JS Analysis)', () => {
     expect(diagnostics['js-analyzer'][0]).toContain('Unbalanced opening brace');
   });
 
-  it('should produce a trace when analyzer is dispatched', () => {
+  it('should NOT produce a trace when analyzer is dispatched (automatic)', () => {
     runtime.dispatch(3);
-    expect(runtime.getTraceStack().length).toBe(1);
-    expect(runtime.getTraceStack()[0].metaBufferId).toBe(3);
+    expect(runtime.getTraceStack().length).toBe(0);
   });
 
   it('should flow signals from Editor to Root', () => {
