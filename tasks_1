@@ -34,21 +34,21 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ## 🗺️ ROADMAP DI SVILUPPO
 
-### ☐ FASE 1 — Core Logic Runtime (MetaBuffer Runtime)
+### ☑ FASE 1 — Core Logic Runtime (MetaBuffer Runtime)
 *Costruire solo la logica pura, il memory management logico e la memoria di controllo. Nessuna UI reale, nessun filesystem.*
 
-#### Task 1.1 — Tipi Fondamentali (JSDoc)
+#### ☑ Task 1.1 — Tipi Fondamentali (JSDoc)
 - Definisci tramite JSDoc i tipi strutturali: `MetaBuffer`, `Trace`, `ContextView`, `ContextDelta`.
 - **Invariante Semantica**: Il sistema non distingue tipi di Trace; la loro interpretazione è esclusivamente una convenzione. Il record deve rimanere una struttura dati piatta e uniforme.
 
 
-#### Task 1.2 — MetaBufferRuntime (Dispatcher)
+#### ☑ Task 1.2 — MetaBufferRuntime (Dispatcher)
 - Implementa la classe `MetaBufferRuntime`. Coordina solo l'applicazione dei MetaBuffer. Non possiede autorità semantica, non introduce lifecycle applicativi e non memorizza stato globale non transizionale.
 
-#### Task 1.3 — Enforcing dello Scope e Structural Sharing
+#### ☑ Task 1.3 — Enforcing dello Scope e Structural Sharing
 - Configura il generatore di `ContextView`: prima di chiamare `apply()`, isola solo le chiavi incluse nello `scope` del buffer usando riferimenti stabili. Dopo `apply()`, applica la patch del `ContextDelta` scartando silenziosamente le chiavi fuori scope.
 
-#### Task 1.4 — Dispatch Sincrono e Stack del Trace
+#### ☑ Task 1.4 — Dispatch Sincrono e Stack del Trace
 - Implementa `dispatch(metaBufferId)`. Deve essere sincrono e deterministico.
 - Se `apply()` restituisce un `Trace`, assegna un ID incrementale, collega il `parentTraceId` guardando la cima dello stack e fai il push (append-only, stack-like). Se restituisce `null`, non generare alcun Trace.
 
