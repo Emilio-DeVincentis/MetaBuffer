@@ -1,0 +1,25 @@
+{
+  "applicationId": "js.metabuffer.system",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "url": "/ui/index.html",
+  "windowOptions": {
+    "title": "MetaBuffer System MVP",
+    "width": 1200,
+    "height": 800,
+    "minWidth": 800,
+    "minHeight": 600,
+    "icon": "/ui/icons/appIcon.png"
+  },
+  "cli": {
+    "binaryName": "metabuffer-system",
+    "resourcesPath": "/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/ui/js/neutralino.js"
+  },
+  "modes": {
+    "window": {
+      "enableInspector": true
+    }
+  }
+}

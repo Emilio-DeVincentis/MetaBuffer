@@ -17,31 +17,31 @@ Costruire un **MVP reale e minimale** dentro l'host NeutralinoJS che dimostri tr
 ## ✅ CHECKLIST DI TASK OPERATIVI (IN ORDINE SEQUENZIALE)
 
 ### 1. Bridge Neutralino Reale (Host Adapter)
-- [ ] Implementa `src/host/bridge.js` come **Inbound/Outbound Adapter impuro** (Hexagonal Architecture).
-- [ ] Mappa le API dell'host: collega gli eventi reali della UI (click, tastiera) a funzioni che invocano il `dispatch()` puro del kernel.
-- [ ] Gestisci la persistenza: il bridge intercetta la chiusura dell'app, chiama `exportState()` sul core e scrive il blob JSON sul file system reale usando le API `window.NL_FS`.
-- [ ] **Vincolo di isolamento**: Nessun file all'interno di `src/core/` o `src/buffers/` deve importare `src/host/` o fare riferimento all'oggetto globale `window`. La rimozione totale della cartella `src/host/` deve lasciare il core intatto e funzionante nei test Vitest.
+- [x] Implementa `src/host/bridge.js` come **Inbound/Outbound Adapter impuro** (Hexagonal Architecture).
+- [x] Mappa le API dell'host: collega gli eventi reali della UI (click, tastiera) a funzioni che invocano il `dispatch()` puro del kernel.
+- [x] Gestisci la persistenza: il bridge intercetta la chiusura dell'app, chiama `exportState()` sul core e scrive il blob JSON sul file system reale usando le API `window.NL_FS`.
+- [x] **Vincolo di isolamento**: Nessun file all'interno di `src/core/` o `src/buffers/` deve importare `src/host/` o fare riferimento all'oggetto globale `window`. La rimozione totale della cartella `src/host/` deve lasciare il core intatto e funzionante nei test Vitest.
 
 ### 2. UI Minima & Integrazione CodeMirror (Proiezione Pura)
-- [ ] Costruisci un'interfaccia HTML5/CSS3/JS minimale e nativa (Zero-Dependencies, nessun framework come React/Vue/Svelte).
-- [ ] Integra **CodeMirror** come View/Editor: lo stato del testo di CodeMirror è una *proiezione* del MetaBuffer attivo, non la sorgente della verità. 
-- [ ] Gestisci il testo: la digitazione rapida aggiorna il buffer di testo (senza emettere Trace). I pulsanti espliciti `Analyze`, `Run` e `Kill` inviano comandi di controllo al kernel (generando i rispettivi Trace).
-- [ ] Visualizza in pannelli dedicati e di sola lettura: il contenuto dell'editor, i messaggi di diagnostica (`diagnostics`) e l'output di runtime (`runtime_output`).
+- [x] Costruisci un'interfaccia HTML5/CSS3/JS minimale e nativa (Zero-Dependencies, nessun framework come React/Vue/Svelte).
+- [x] Integra **CodeMirror** come View/Editor: lo stato del testo di CodeMirror è una *proiezione* del MetaBuffer attivo, non la sorgente della verità.
+- [x] Gestisci il testo: la digitazione rapida aggiorna il buffer di testo (senza emettere Trace). I pulsanti espliciti `Analyze`, `Run` e `Kill` inviano comandi di controllo al kernel (generando i rispettivi Trace).
+- [x] Visualizza in pannelli dedicati e di sola lettura: il contenuto dell'editor, i messaggi di diagnostica (`diagnostics`) e l'output di runtime (`runtime_output`).
 
 ### 3. Trace Viewer & Time-Travel (Trasparenza Totale)
-- [ ] Crea un pannello laterale ("Trace Viewer") che elenchi lo stack dei Trace in ordine cronologico.
-- [ ] Ogni nodo della lista deve mostrare visivamente: `traceId`, tipo di evento, `metaBufferId` coinvolto e lo stato del contesto in quel momento.
-- [ ] **Implementa il Time-Travel**: Ogni Trace nel viewer deve essere cliccabile. Al click, la UI invoca il metodo puro `reconstructState(targetTraceId)` del runtime e aggiorna istantaneamente la vista dell'editor, mostrando all'utente il passato esatto del sistema.
+- [x] Crea un pannello laterale ("Trace Viewer") che elenchi lo stack dei Trace in ordine cronologico.
+- [x] Ogni nodo della lista deve mostrare visivamente: `traceId`, tipo di evento, `metaBufferId` coinvolto e lo stato del contesto in quel momento.
+- [x] **Implementa il Time-Travel**: Ogni Trace nel viewer deve essere cliccabile. Al click, la UI invoca il metodo puro `reconstructState(targetTraceId)` del runtime e aggiorna istantaneamente la vista dell'editor, mostrando all'utente il passato esatto del sistema.
 
 ### 4. Cold Start Reale (Dogfooding della Persistenza)
-- [ ] Configura il ciclo di vita dell'applicazione: all'avvio (boot), il bridge controlla se esiste un blob salvato su disco tramite `window.NL_FS`.
-- [ ] Se esiste, invoca la logica di idratazione passando il testo estratto per ricreare il runtime con lo storico intatto.
-- [ ] Verifica sperimentalmente il ciclo: scrivi nell'editor -> esegui un comando -> chiudi brutalmente l'applicazione -> riapri l'applicazione -> verifica che lo stato dell'editor, il cursore e l'intero stack dei Trace siano speculari all'istante precedente lo shutdown.
+- [x] Configura il ciclo di vita dell'applicazione: all'avvio (boot), il bridge controlla se esiste un blob salvato su disco tramite `window.NL_FS`.
+- [x] Se esiste, invoca la logica di idratazione passando il testo estratto per ricreare il runtime con lo storico intatto.
+- [x] Verifica sperimentalmente il ciclo: scrivi nell'editor -> esegui un comando -> chiudi brutalmente l'applicazione -> riapri l'applicazione -> verifica che lo stato dell'editor, il cursore e l'intero stack dei Trace siano speculari all'istante precedente lo shutdown.
 
 ### 5. Error Handling End-to-End
-- [ ] Forza degli errori simulati o invia comandi malformati dall'interfaccia verso il core.
-- [ ] Verifica che il `dispatch()` risponda correttamente con un `ExecutionResult` di fallimento, che lo stato interno non venga mutato e che non vengano appesi Trace corrotti allo stack.
-- [ ] La UI deve intercettare l'oggetto di errore e mostrarlo all'utente tramite un banner di notifica nativo, senza mandare in crash l'applicazione o l'host.
+- [x] Forza degli errori simulati o invia comandi malformati dall'interfaccia verso il core.
+- [x] Verifica che il `dispatch()` risponda correttamente con un `ExecutionResult` di fallimento, che lo stato interno non venga mutato e che non vengano appesi Trace corrotti allo stack.
+- [x] La UI deve intercettare l'oggetto di errore e mostrarlo all'utente tramite un banner di notifica nativo, senza mandare in crash l'applicazione o l'host.
 
 ### 6. Sessione di Audit Manuale
 - [ ] Conduci una sessione di dogfooding manuale continuativa di almeno 30 minuti.
