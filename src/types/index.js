@@ -32,6 +32,17 @@
  */
 
 /**
+ * @typedef {'IDLE' | 'REQUESTED' | 'ERROR'} RunStatus
+ */
+
+/**
+ * @typedef {Object} OutputChunk
+ * @property {'stdout' | 'stderr' | 'exit'} type - The type of output.
+ * @property {string} [text] - The content of the chunk.
+ * @property {number} [code] - The exit code (only for exit type).
+ */
+
+/**
  * @typedef {Object} Suggestion
  * @property {string} id - Unique identifier for the suggestion.
  * @property {'edit' | 'info'} kind - The type of suggestion.

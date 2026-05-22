@@ -87,10 +87,10 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ---
 
-### ☐ FASE 5 — Run & Terminale Proiettivo
+### ☑ FASE 5 — Run & Terminale Proiettivo
 *Esecuzione del codice tramite l'endpoint osservabile esterno.*
 
-#### Task 5.1 — MetaBuffer di Esecuzione JS
+#### ☑ Task 5.1 — MetaBuffer di Esecuzione JS
 - Crea un MetaBuffer (`scope: ['js_source_code', 'runtime_output', 'run_status']`). Quando invocato, passa il controllo all'endpoint esterno per l'esecuzione del codice, cattura l'output in modo transizionale scrivendolo in `runtime_output` ed emette un `Trace` strutturale.
 
 ---

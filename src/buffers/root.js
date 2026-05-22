@@ -12,7 +12,9 @@ export const rootBuffer = {
     'pending_command',
     'needs_analysis',
     'agent_status',
-    'agent_command'
+    'agent_command',
+    'run_status',
+    'run_command'
   ],
   apply: (view) => {
     const patch = {};
@@ -55,6 +57,13 @@ export const rootBuffer = {
         patch.agent_status = 'IDLE';
         patch.agent_command = null;
         // Cancellation is an act of control -> Trace
+        trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+      } else if (command.type === 'ACTIVATE_RUN') {
+        patch.run_command = 'ACTIVATE';
+      } else if (command.type === 'KILL_RUN') {
+        patch.run_status = 'IDLE';
+        patch.run_command = 'KILL';
+        // Kill is an act of control -> Trace
         trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
       }
 
