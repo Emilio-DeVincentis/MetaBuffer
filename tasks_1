@@ -74,6 +74,14 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 #### ☑ Task 3.2 — Analisi Minimale Componibile
 - Implementa una routine di analisi sintattica (anche deterministica/minimale sui caratteri) che individua errori base (es. parentesi graffe sbilanciate, punti e virgola mancanti) e scrive il risultato in `diagnostics['js-analyzer']`.
 
+### ☑ FASE 3.5 — Static Hydration (Cold Start & Persistence)
+*Rendere il core nativamente persistibile e ri-idratabile in modo puro e deterministico.*
+
+#### ☑ Task 3.5.1 — Esportazione e Importazione Deterministica
+- Implementa `exportState` e `hydrateState` in un modulo dedicato.
+- Garantisce l'idempotenza tramite serializzazione canonica (chiavi ordinate).
+- Valida l'integrità del Trace di BOOTSTRAP durante l'idratazione.
+
 ---
 
 ### ☑ FASE 4 — Agenti (Cittadini di Prima Classe nel Controllo)
