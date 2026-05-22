@@ -10,12 +10,12 @@
 
 /**
  * @typedef {Object} ContextDelta
- * @property {Record<string, any>} patch - A partial update to the context state.
+ * @property {Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>} patch - A partial update to the context state.
  */
 
 /**
  * @typedef {Object} ContextView
- * @property {Readonly<Record<string, any>>} state - A read-only view of the context, limited by scope.
+ * @property {Readonly<Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>>} state - A read-only view of the context, limited by scope.
  */
 
 /**

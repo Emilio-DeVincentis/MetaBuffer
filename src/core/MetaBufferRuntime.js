@@ -10,7 +10,7 @@ export class MetaBufferRuntime {
     /** @type {Map<number, MetaBuffer>} */
     this.buffers = new Map();
 
-    /** @type {Record<string, any>} */
+    /** @type {Record<string, unknown>} */
     this.context = {};
 
     /** @type {Trace[]} */
@@ -30,10 +30,24 @@ export class MetaBufferRuntime {
 
   /**
    * Sets initial context values.
-   * @param {Record<string, any>} initialContext
+   * @param {Record<string, unknown>} initialContext
    */
   setContext(initialContext) {
     this.context = { ...initialContext };
+  }
+
+  /**
+   * Initializes the system and emits the mandatory BOOTSTRAP Trace.
+   */
+  initialize() {
+    /** @type {Trace} */
+    const bootstrapTrace = {
+      id: this.nextTraceId++,
+      metaBufferId: 1, // Root MetaBuffer ID
+      parentTraceId: null,
+      scope: ['*'] // System-level bootstrap scope
+    };
+    this.traceStack.push(bootstrapTrace);
   }
 
   /**
@@ -47,7 +61,7 @@ export class MetaBufferRuntime {
     }
 
     // 1. Prepare ContextView (Scope Isolation & Structural Sharing by contract)
-    /** @type {Record<string, any>} */
+    /** @type {Record<string, unknown>} */
     const viewState = {};
     for (const key of buffer.scope) {
       if (Object.prototype.hasOwnProperty.call(this.context, key)) {
@@ -100,7 +114,7 @@ export class MetaBufferRuntime {
 
   /**
    * Returns the current context (read-only).
-   * @returns {Readonly<Record<string, any>>}
+   * @returns {Readonly<Record<string, unknown>>}
    */
   getContext() {
     return Object.freeze({ ...this.context });
