@@ -6,7 +6,7 @@
 export const editorBuffer = {
   id: 2,
   parentId: 1, // Root is the parent
-  scope: ['js_source_code', 'cursor_position', 'incoming_input'],
+  scope: ['js_source_code', 'cursor_position', 'incoming_input', 'needs_analysis'],
   apply: (view) => {
     const patch = {};
     const input = view.state.incoming_input;
@@ -21,6 +21,9 @@ export const editorBuffer = {
 
       // Consume input
       patch.incoming_input = null;
+
+      // Signal that analysis is needed after a mutation
+      patch.needs_analysis = true;
     }
 
     // Typing never produces a Trace

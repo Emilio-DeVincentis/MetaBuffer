@@ -6,10 +6,19 @@
 export const rootBuffer = {
   id: 1,
   parentId: null,
-  scope: ['active_buffers', 'focus_stack', 'pending_command'],
+  scope: ['active_buffers', 'focus_stack', 'pending_command', 'needs_analysis'],
   apply: (view) => {
     const patch = {};
     let trace = null;
+
+    // Coordination: Root observes needs_analysis signal
+    if (view.state.needs_analysis) {
+      // In a real system, this might trigger a structural change or
+      // prepare the focus stack for the analyzer.
+      // For now, we clear the signal. The external Host/Device will
+      // see this change and decide when to dispatch the Analyzer (ID 3).
+      patch.needs_analysis = false;
+    }
 
     const command = view.state.pending_command;
 

@@ -65,13 +65,13 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ---
 
-### ☐ FASE 3 — Analisi JS (AST / Lint / Semantica)
+### ☑ FASE 3 — Analisi JS (AST / Lint / Semantica)
 *Rottura dell'illusione tramite introduzione di un comportamento riflessivo sul testo.*
 
-#### Task 3.1 — MetaBuffer di Analisi (LSP-like)
+#### ☑ Task 3.1 — MetaBuffer di Analisi (LSP-like)
 - Crea un MetaBuffer figlio dell'editor (`scope: ['js_source_code', 'diagnostics']`). L'attivazione avviene solo tramite comando esplicito o trigger strutturale ed emette obbligatoriamente un `Trace`.
 
-#### Task 3.2 — Analisi Minimale Componibile
+#### ☑ Task 3.2 — Analisi Minimale Componibile
 - Implementa una routine di analisi sintattica (anche deterministica/minimale sui caratteri) che individua errori base (es. parentesi graffe sbilanciate, punti e virgola mancanti) e scrive il risultato in `diagnostics['js-analyzer']`.
 
 ---
