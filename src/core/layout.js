@@ -15,7 +15,7 @@
 
 /**
  * Pure function to calculate the layout view based on context.
- * @param {Readonly<Record<string, any>>} context
+ * @param {Readonly<Record<string, unknown>>} context
  * @returns {LayoutView}
  */
 export function renderLayout(context) {

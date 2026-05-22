@@ -19,7 +19,8 @@ describe('MetaBuffer System - End-to-End Validation', () => {
     runtime.registerBuffer(agentBuffer);
     runtime.registerBuffer(executorBuffer);
 
-    // Bootstrap
+    // Bootstrap (Trace 1)
+    runtime.initialize();
     runtime.setContext({
       active_buffers: [1, 2],
       focus_stack: [1, 2],
@@ -30,20 +31,21 @@ describe('MetaBuffer System - End-to-End Validation', () => {
       agent_status: 'IDLE',
       run_status: 'IDLE'
     });
+    expect(runtime.getTraceStack().length).toBe(1);
+    expect(runtime.getTraceStack()[0].metaBufferId).toBe(1);
 
     // 1. Typing in Editor (Content mutation -> No Trace)
     runtime.setContext({ ...runtime.getContext(), incoming_input: 'function main() {' });
     runtime.dispatch(2);
     expect(projectCode(runtime.getContext())).toBe('function main() {');
-    expect(runtime.getTraceStack().length).toBe(0);
+    expect(runtime.getTraceStack().length).toBe(1); // Still 1
     expect(runtime.getContext().needs_analysis).toBe(true);
 
-    // 2. Analysis (Structural change -> Trace 1)
+    // 2. Analysis (Automatic -> No Trace)
     runtime.dispatch(1); // Root clears signal
     runtime.dispatch(3); // Analyzer run
     expect(runtime.getContext().diagnostics['js-analyzer'].length).toBe(1); // Unbalanced brace
-    expect(runtime.getTraceStack().length).toBe(1);
-    expect(runtime.getTraceStack()[0].metaBufferId).toBe(3);
+    expect(runtime.getTraceStack().length).toBe(1); // Still 1
 
     // 3. Agent Request (Structural change -> Trace 2)
     runtime.setContext({ ...runtime.getContext(), pending_command: { type: 'ACTIVATE_AGENT' } });
@@ -51,6 +53,7 @@ describe('MetaBuffer System - End-to-End Validation', () => {
     runtime.dispatch(4); // Agent handles activation
     expect(runtime.getContext().agent_status).toBe('REQUESTED');
     expect(runtime.getTraceStack().length).toBe(2);
+    expect(runtime.getTraceStack()[1].metaBufferId).toBe(4);
 
     // Mock Agent Result (Consolidation -> No Trace)
     runtime.setContext({
@@ -67,6 +70,7 @@ describe('MetaBuffer System - End-to-End Validation', () => {
     runtime.dispatch(5);
     expect(runtime.getContext().run_status).toBe('REQUESTED');
     expect(runtime.getTraceStack().length).toBe(3);
+    expect(runtime.getTraceStack()[2].metaBufferId).toBe(5);
 
     // Mock Execution Output
     runtime.setContext({ ...runtime.getContext(), incoming_output_chunk: { type: 'stdout', text: 'Done' } });

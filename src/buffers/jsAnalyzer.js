@@ -63,8 +63,9 @@ export const jsAnalyzerBuffer = {
 
     return {
       delta: { patch: { diagnostics } },
-      // Analysis taking control produces a Trace
-      trace: { id: 0, metaBufferId: 3, parentTraceId: null, scope: [] }
+      // Automatic analysis triggered by content mutation MUST NOT generate Trace.
+      // Trace is reserved for explicit, user-initiated control shifts.
+      trace: null
     };
   }
 };

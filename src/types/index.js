@@ -6,16 +6,17 @@
  * @property {number} metaBufferId - ID of the MetaBuffer that generated the trace.
  * @property {number|null} parentTraceId - ID of the preceding trace in the control stack.
  * @property {string[]} scope - The scope declared by the MetaBuffer at the time of trace emission.
+ * @property {ContextDelta|null} [delta] - The state change associated with this trace (for reconstruction).
  */
 
 /**
  * @typedef {Object} ContextDelta
- * @property {Record<string, any>} patch - A partial update to the context state.
+ * @property {Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>} patch - A partial update to the context state.
  */
 
 /**
  * @typedef {Object} ContextView
- * @property {Readonly<Record<string, any>>} state - A read-only view of the context, limited by scope.
+ * @property {Readonly<Record<string, string | number | boolean | Array<unknown> | Record<string, unknown> | null>>} state - A read-only view of the context, limited by scope.
  */
 
 /**
@@ -49,6 +50,22 @@
  * @property {{ from: number, to: number }} [range] - For edits, the range to replace.
  * @property {string} [replacement] - For edits, the new content.
  * @property {string} explanation - Human-readable explanation.
+ */
+
+/**
+ * @typedef {Object} KernelError
+ * @property {string} code - Machine-readable error code.
+ * @property {string} message - Human-readable error message.
+ * @property {number} [bufferId] - ID of the MetaBuffer that caused the error.
+ */
+
+/**
+ * @typedef {Object} ExecutionResult
+ * @property {boolean} ok - Indicates if the execution was successful.
+ * @property {boolean} [success] - Alias for ok (for backward compatibility or preference).
+ * @property {unknown} [value] - Optional return value on success.
+ * @property {unknown} [data] - Alias for value.
+ * @property {KernelError} [error] - Error details on failure.
  */
 
 export {};

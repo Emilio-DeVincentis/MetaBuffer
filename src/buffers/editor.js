@@ -11,7 +11,7 @@ export const editorBuffer = {
     const patch = {};
     const input = view.state.incoming_input;
 
-    if (input) {
+    if (input !== null && input !== undefined) {
       // Content mutation: append input to source code
       const currentCode = view.state.js_source_code || '';
       patch.js_source_code = currentCode + input;
