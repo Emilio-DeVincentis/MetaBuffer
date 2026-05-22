@@ -44,6 +44,21 @@ export const rootBuffer = {
           patch.focus_stack = focusStack;
           trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
         }
+      } else if (command.type === 'FOCUS_NEXT' || command.type === 'FOCUS_PREV') {
+          const activeBuffers = view.state.active_buffers || [];
+          const currentIndex = activeBuffers.indexOf(view.state.focused_buffer_id);
+          let nextIndex = currentIndex;
+          if (command.type === 'FOCUS_NEXT') nextIndex = (currentIndex + 1) % activeBuffers.length;
+          else nextIndex = (currentIndex - 1 + activeBuffers.length) % activeBuffers.length;
+
+          const targetId = activeBuffers[nextIndex];
+          if (targetId !== view.state.focused_buffer_id) {
+              patch.focused_buffer_id = targetId;
+              const focusStack = Array.isArray(view.state.focus_stack) ? [...view.state.focus_stack] : [];
+              focusStack.push(targetId);
+              patch.focus_stack = focusStack;
+              trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+          }
       } else if (command.type === 'CREATE_BUFFER') {
         const nextId = view.state.next_buffer_id || 100;
         const newBuffer = {

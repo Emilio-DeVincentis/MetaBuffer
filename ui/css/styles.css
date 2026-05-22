@@ -133,12 +133,30 @@ main {
     bottom: 20px;
     right: 20px;
     padding: 10px 20px;
-    background-color: #f44336;
+    background-color: #007acc;
     color: white;
     border-radius: 4px;
     z-index: 1000;
 }
 
+#fatal-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(255, 0, 0, 0.9);
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2rem;
+    font-weight: bold;
+    z-index: 9999;
+    padding: 50px;
+    text-align: center;
+}
+
 .hidden {
-    display: none;
+    display: none !important;
 }
