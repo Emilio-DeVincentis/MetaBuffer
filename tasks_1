@@ -54,13 +54,13 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ---
 
-### ☐ FASE 2 — Default World (L'Illusione dell'Editor)
+### ☑ FASE 2 — Default World (L'Illusione dell'Editor)
 *Costruire l'esperienza editoriale standard senza riflessione visibile o tracciamento intrusivo.*
 
-#### Task 2.1 — MetaBuffer Radice
+#### ☑ Task 2.1 — MetaBuffer Radice
 - Crea il MetaBuffer radice (`id: 1`, `parentId: null`, `scope: ['active_buffers', 'focus_stack']`). Rappresenta il Default World e gestisce lo smistamento iniziale dei comandi (es. `M-x`).
 
-#### Task 2.2 — Editor JavaScript (Contenuto Puro)
+#### ☑ Task 2.2 — Editor JavaScript (Contenuto Puro)
 - Crea il MetaBuffer dedicato all'editing (`scope: ['js_source_code', 'cursor_position']`). La digitazione muta il contesto locale ma restituisce sempre `trace: null` per non inquinare lo stack di controllo.
 
 ---
