@@ -51,4 +51,18 @@
  * @property {string} explanation - Human-readable explanation.
  */
 
+/**
+ * @typedef {Object} KernelError
+ * @property {string} code - Machine-readable error code.
+ * @property {string} message - Human-readable error message.
+ * @property {number} [bufferId] - ID of the MetaBuffer that caused the error.
+ */
+
+/**
+ * @typedef {Object} ExecutionResult
+ * @property {boolean} ok - Indicates if the execution was successful.
+ * @property {unknown} [value] - Optional return value on success.
+ * @property {KernelError} [error] - Error details on failure.
+ */
+
 export {};
