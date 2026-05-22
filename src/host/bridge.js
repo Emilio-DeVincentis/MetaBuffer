@@ -49,10 +49,14 @@ export class CommandBridge {
     const patch = {};
     let targetBufferId = null;
 
+    const context = this.runtime.getContext();
+
     switch (event.kind) {
       case 'UI_INPUT':
         patch.incoming_input = event.payload;
-        targetBufferId = 2; // Editor
+        // Find which buffer should receive input
+        targetBufferId = 2; // Default to legacy editor for safety,
+                            // but the new editorBuffer will use focused_buffer_id
         break;
       case 'PROCESS_OUTPUT':
         patch.incoming_output_chunk = event.payload;

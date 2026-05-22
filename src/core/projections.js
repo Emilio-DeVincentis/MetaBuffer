@@ -10,7 +10,23 @@
  * @returns {string}
  */
 export function projectCode(context) {
+  if (context.focused_buffer_id && context.buffers) {
+      const buffer = context.buffers[context.focused_buffer_id];
+      if (buffer && buffer.kind === 'editor') {
+          return buffer.content || '';
+      }
+  }
   return context.js_source_code || '';
+}
+
+/**
+ * Projects all workspace buffers.
+ * @param {Readonly<Record<string, unknown>>} context
+ * @returns {any[]}
+ */
+export function projectWorkspace(context) {
+    if (!context.buffers) return [];
+    return Object.values(context.buffers).filter(b => b.kind === 'editor' || b.kind === 'inspector');
 }
 
 /** @typedef {import('../types/index.js').OutputChunk} OutputChunk */

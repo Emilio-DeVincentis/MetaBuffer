@@ -49,5 +49,3 @@ Evolvere l'MVP da un editor a singolo file a un ambiente spaziale Multi-Buffer i
 - I buffer sono disposti orizzontalmente come fogli affiancati (Niri-style).
 - Il passaggio tra i buffer sposta fluidamente il nastro centrando la risorsa attiva.
 - Il Time-Travel riavvolge il tempo e lo "spazio", spostando la telecamera del nastro nel passato.
-
-Procedi mostrando la struttura CSS del nastro orizzontale e l'adattamento del comando `FOCUS_BUFFER`.

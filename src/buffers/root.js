@@ -9,12 +9,15 @@ export const rootBuffer = {
   scope: [
     'active_buffers',
     'focus_stack',
+    'focused_buffer_id',
+    'buffers',
     'pending_command',
     'needs_analysis',
     'agent_status',
     'agent_command',
     'run_status',
-    'run_command'
+    'run_command',
+    'next_buffer_id'
   ],
   apply: (view) => {
     const patch = {};
@@ -22,17 +25,51 @@ export const rootBuffer = {
 
     // Coordination: Root observes needs_analysis signal
     if (view.state.needs_analysis) {
-      // In a real system, this might trigger a structural change or
-      // prepare the focus stack for the analyzer.
-      // For now, we clear the signal. The external Host/Device will
-      // see this change and decide when to dispatch the Analyzer (ID 3).
       patch.needs_analysis = false;
     }
 
     const command = view.state.pending_command;
 
     if (command) {
-      if (command.type === 'ACTIVATE_BUFFER') {
+      if (command.type === 'FOCUS_BUFFER') {
+        const targetId = command.bufferId;
+        if (targetId !== view.state.focused_buffer_id) {
+          patch.focused_buffer_id = targetId;
+          const focusStack = Array.isArray(view.state.focus_stack)
+            ? [...view.state.focus_stack]
+            : [];
+          focusStack.push(targetId);
+          patch.focus_stack = focusStack;
+          trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+        }
+      } else if (command.type === 'CREATE_BUFFER') {
+        const nextId = view.state.next_buffer_id || 100;
+        const newBuffer = {
+          id: nextId,
+          kind: command.kind || 'editor',
+          content: command.initialContent || '',
+          metadata: {}
+        };
+        const buffers = view.state.buffers ? { ...view.state.buffers } : {};
+        buffers[nextId] = newBuffer;
+        patch.buffers = buffers;
+        patch.next_buffer_id = nextId + 1;
+
+        patch.focused_buffer_id = nextId;
+        const focusStack = Array.isArray(view.state.focus_stack)
+            ? [...view.state.focus_stack]
+            : [];
+        focusStack.push(nextId);
+        patch.focus_stack = focusStack;
+
+        const activeBuffers = Array.isArray(view.state.active_buffers)
+          ? [...view.state.active_buffers]
+          : [];
+        activeBuffers.push(nextId);
+        patch.active_buffers = activeBuffers;
+
+        trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+      } else if (command.type === 'ACTIVATE_BUFFER') {
         const activeBuffers = Array.isArray(view.state.active_buffers)
           ? [...view.state.active_buffers]
           : [];
@@ -48,6 +85,7 @@ export const rootBuffer = {
 
         focusStack.push(command.bufferId);
         patch.focus_stack = focusStack;
+        patch.focused_buffer_id = command.bufferId;
 
         // Structural change produces a Trace
         trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };

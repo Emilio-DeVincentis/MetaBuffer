@@ -5,7 +5,8 @@ import { editorBuffer } from '../src/buffers/editor.js';
 import { jsAnalyzerBuffer } from '../src/buffers/jsAnalyzer.js';
 import { agentBuffer } from '../src/buffers/agent.js';
 import { executorBuffer } from '../src/buffers/executor.js';
-import { projectCode, projectDiagnostics, projectTerminal } from '../src/core/projections.js';
+import { spatialInspectorBuffer } from '../src/buffers/inspector.js';
+import { projectCode, projectDiagnostics, projectTerminal, projectWorkspace } from '../src/core/projections.js';
 import { hydrateState } from '../src/core/serialization.js';
 
 // Setup Runtime
@@ -15,11 +16,15 @@ runtime.registerBuffer(editorBuffer);
 runtime.registerBuffer(jsAnalyzerBuffer);
 runtime.registerBuffer(agentBuffer);
 runtime.registerBuffer(executorBuffer);
+runtime.registerBuffer(spatialInspectorBuffer);
 
 const bridge = new CommandBridge(runtime);
 
+// Global UI State
+const editors = new Map(); // bufferId -> CodeMirror instance
+
 // UI Elements
-const editorElement = document.getElementById('editor');
+const ribbon = document.getElementById('niri-ribbon');
 const diagnosticsContent = document.getElementById('diagnostics-content');
 const outputContent = document.getElementById('output-content');
 const traceContent = document.getElementById('trace-content');
@@ -30,24 +35,13 @@ const btnRun = document.getElementById('btn-run');
 const btnKill = document.getElementById('btn-kill');
 const btnSave = document.getElementById('btn-save');
 
-// Initialize CodeMirror
-const editor = CodeMirror.fromTextArea(editorElement, {
-    lineNumbers: true,
-    mode: 'javascript',
-    theme: 'dracula'
-});
-window.editor = editor; // Expose for verification/bridge
-
 // Sync UI with State
 function updateUI() {
     const context = runtime.getContext();
     const traces = runtime.getTraceStack();
 
-    // 1. Project Code (if changed externally, e.g. time travel)
-    const currentCode = projectCode(context);
-    if (editor.getValue() !== currentCode && !editor.hasFocus()) {
-        editor.setValue(currentCode);
-    }
+    // 1. Project Workspace (Niri Ribbon)
+    renderRibbon(context);
 
     // 2. Project Diagnostics
     const diagnostics = projectDiagnostics(context);
@@ -69,6 +63,103 @@ function updateUI() {
 
     // 4. Project Traces
     renderTraces(traces);
+}
+
+function renderRibbon(context) {
+    const workspaces = projectWorkspace(context);
+    const focusedId = context.focused_buffer_id;
+
+    // Remove defunct columns
+    for (const [id, cm] of editors) {
+        if (!workspaces.find(w => w.id === id)) {
+            const col = document.getElementById(`col-${id}`);
+            if (col) col.remove();
+            editors.delete(id);
+        }
+    }
+
+    workspaces.forEach((ws, index) => {
+        let col = document.getElementById(`col-${ws.id}`);
+        if (!col) {
+            col = document.createElement('div');
+            col.id = `col-${ws.id}`;
+            col.className = 'column';
+            col.innerHTML = `
+                <div class="column-header">Buffer ${ws.id} [${ws.kind}]</div>
+                <div class="column-content" id="content-${ws.id}"></div>
+            `;
+            ribbon.appendChild(col);
+
+            if (ws.kind === 'editor') {
+                const cm = CodeMirror(document.getElementById(`content-${ws.id}`), {
+                    value: ws.content || '',
+                    lineNumbers: true,
+                    mode: 'javascript',
+                    theme: 'dracula'
+                });
+                window.editor = cm; // Expose last created editor for verification
+                cm.on('change', (instance, change) => {
+                    if (change.origin !== 'setValue') {
+                        // Ensure this buffer is focused before sending input
+                        if (context.focused_buffer_id !== ws.id) {
+                            bridge.handleHostEvent({ kind: 'COMMAND', payload: { type: 'FOCUS_BUFFER', bufferId: ws.id } });
+                        }
+                        bridge.handleHostEvent({ kind: 'UI_INPUT', payload: change.text.join('\n') });
+                        updateUI();
+                    }
+                });
+                editors.set(ws.id, cm);
+            } else if (ws.kind === 'inspector') {
+                const content = document.getElementById(`content-${ws.id}`);
+                content.style.padding = '20px';
+                content.style.overflowY = 'auto';
+                updateInspectorView(ws.id, context);
+            }
+        }
+
+        // Update active state
+        col.classList.toggle('active', ws.id === focusedId);
+
+        // Update content if not focused (prevent cursor reset for current)
+        if (ws.kind === 'editor') {
+            const cm = editors.get(ws.id);
+            if (cm.getValue() !== ws.content && !cm.hasFocus()) {
+                cm.setValue(ws.content);
+            }
+        } else if (ws.kind === 'inspector') {
+            updateInspectorView(ws.id, context);
+        }
+    });
+
+    // Camera movement
+    const focusedIndex = workspaces.findIndex(w => w.id === focusedId);
+    if (focusedIndex !== -1) {
+        const offset = focusedIndex * 80; // 80vw per column
+        ribbon.style.transform = `translateX(-${offset}vw)`;
+    }
+}
+
+function updateInspectorView(id, context) {
+    const container = document.getElementById(`content-${id}`);
+    if (!container) return;
+
+    const buffers = context.buffers || {};
+    const totalBuffers = Object.keys(buffers).length;
+    const focusStack = context.focus_stack || [];
+
+    container.innerHTML = `
+        <h2>Spatial Inspector</h2>
+        <p><strong>Total Buffers:</strong> ${totalBuffers}</p>
+        <p><strong>Focused Buffer:</strong> ${context.focused_buffer_id}</p>
+        <h3>Focus History</h3>
+        <ul>
+            ${focusStack.slice(-10).reverse().map(fid => `<li>Buffer ${fid}</li>`).join('')}
+        </ul>
+        <h3>Buffer List</h3>
+        <ul>
+            ${Object.values(buffers).map(b => `<li>[${b.id}] ${b.kind} (${b.content?.length || 0} chars)</li>`).join('')}
+        </ul>
+    `;
 }
 
 function renderTraces(traces) {
@@ -96,15 +187,10 @@ function renderTraces(traces) {
 function timeTravel(traceId) {
     const result = runtime.reconstructState(traceId);
     if (result.ok) {
-        // We don't want to permanenty change the runtime state here,
-        // just preview it. Or we can rollback.
-        // Task says: "reconstructState and updates the view"
-        // Let's preview by temporary overriding the context for the UI
         const previewContext = result.value;
-        // In a real implementation, time travel might be a "preview mode"
-        // For MVP, let's just use the reconstructed state to update UI elements
-        const currentCode = projectCode(previewContext);
-        editor.setValue(currentCode);
+
+        // Update all UI components with the reconstructed state
+        renderRibbon(previewContext);
 
         // Mark as active trace in UI
         Array.from(traceContent.children).forEach(child => {
@@ -127,20 +213,33 @@ function showNotification(msg, duration = 3000) {
     }, duration);
 }
 
-// Event Listeners
-editor.on('change', (cm, change) => {
-    if (change.origin !== 'setValue') {
-        // In CodeMirror 5, we can't easily get just the new characters
-        // without some diffing if we want to follow 'UI_INPUT' exactly.
-        // For MVP, let's just send the whole new text as an update
-        // OR better, we could adjust the editorBuffer to accept full text.
-        // Let's stick to the spirit: typing updates buffer.
+// Keyboard Shortcuts
+window.addEventListener('keydown', (e) => {
+    const context = runtime.getContext();
+    const workspaces = projectWorkspace(context);
+    const focusedId = context.focused_buffer_id;
+    const currentIndex = workspaces.findIndex(w => w.id === focusedId);
 
-        // Mocking 'UI_INPUT' as the delta or the full text for simplicity
-        // The original editorBuffer appends input. Let's send only the change.
-        if (change.text) {
-            const input = change.text.join('\n');
-            bridge.handleHostEvent({ kind: 'UI_INPUT', payload: input });
+    if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'ArrowRight') {
+            const next = workspaces[currentIndex + 1];
+            if (next) {
+                bridge.handleHostEvent({ kind: 'COMMAND', payload: { type: 'FOCUS_BUFFER', bufferId: next.id } });
+                updateUI();
+            }
+        } else if (e.key === 'ArrowLeft') {
+            const prev = workspaces[currentIndex - 1];
+            if (prev) {
+                bridge.handleHostEvent({ kind: 'COMMAND', payload: { type: 'FOCUS_BUFFER', bufferId: prev.id } });
+                updateUI();
+            }
+        } else if (e.key === 'n') {
+            e.preventDefault();
+            bridge.handleHostEvent({ kind: 'COMMAND', payload: { type: 'CREATE_BUFFER', kind: 'editor', initialContent: '// New Buffer\n' } });
+            updateUI();
+        } else if (e.key === 'i') {
+            e.preventDefault();
+            bridge.handleHostEvent({ kind: 'COMMAND', payload: { type: 'CREATE_BUFFER', kind: 'inspector' } });
             updateUI();
         }
     }
@@ -201,6 +300,11 @@ async function boot() {
 
     if (!hydrated) {
         runtime.initialize();
+        // Create initial editor
+        bridge.handleHostEvent({
+            kind: 'COMMAND',
+            payload: { type: 'CREATE_BUFFER', kind: 'editor', initialContent: '// Welcome to MetaBuffer\n' }
+        });
     }
 
     bridge.init();
