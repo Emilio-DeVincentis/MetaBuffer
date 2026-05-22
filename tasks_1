@@ -95,15 +95,15 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ---
 
-### ☐ FASE 6 — Proiezione UI e Test End-to-End
+### ☑ FASE 6 — Proiezione UI e Test End-to-End
 
-#### Task 6.1 — Layout Niri-Style Deterministico
+#### ☑ Task 6.1 — Layout Niri-Style Deterministico
 - Implementa la funzione `renderLayout()`: un meccanismo di tiling lineare basato esclusivamente sulla gerarchia visiva dell'albero dei MetaBuffer attivi nel contesto.
 
-#### Task 6.2 — Proiezioni dei Dispositivi di I/O
+#### ☑ Task 6.2 — Proiezioni dei Dispositivi di I/O
 - Collega le chiavi di contesto ai motori esterni impuri: `js_source_code` proietta su CodeMirror 6, `runtime_output` proietta su xterm.js, `diagnostics` proietta su un pannello informativo lineare.
 
-#### Task 6.3 — Test End-to-End di Validazione
+#### ☑ Task 6.3 — Test End-to-End di Validazione
 - Scrivi uno script di test automatico che verifichi la seguente sequenza:
   1. Digitazione nel buffer Editor -> Rilevamento mutazione contesto, nessun Trace generato.
   2. Invocazione Analizzatore -> Generazione Trace, rilevamento errore sintattico.
