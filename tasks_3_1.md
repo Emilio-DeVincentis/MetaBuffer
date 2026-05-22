@@ -14,27 +14,27 @@ Evolvere l'MVP da un editor a singolo file a un ambiente spaziale Multi-Buffer i
 ## ✅ CHECKLIST DI TASK OPERATIVI (IN ORDINE SEQUENZIALE)
 
 ### 1. Grafo dei Buffer e Focus Spaziale nel Core
-- [ ] Estendi l'utilizzo del `MetaBufferRuntime` per ospitare molteplici istanze di MetaBuffer attive nel contesto.
-- [ ] Implementa il comando puro di controllo `FOCUS_BUFFER(bufferId)`. Questo comando aggiorna nel contesto l'ID del buffer spazialmente attivo.
-- [ ] **Verifica dei Trace**: Lo spostamento del focus da un buffer all'altro emette un Trace strutturale. La digitazione del testo all'interno della colonna focalizzata NON emette Trace.
+- [x] Estendi l'utilizzo del `MetaBufferRuntime` per ospitare molteplici istanze di MetaBuffer attive nel contesto.
+- [x] Implementa il comando puro di controllo `FOCUS_BUFFER(bufferId)`. Questo comando aggiorna nel contesto l'ID del buffer spazialmente attivo.
+- [x] **Verifica dei Trace**: Lo spostamento del focus da un buffer all'altro emette un Trace strutturale. La digitazione del testo all'interno della colonna focalizzata NON emette Trace.
 
 ### 2. UI Niri-Style: Il Nastro Orizzontale Infinito
-- [ ] Ridisegna il layout CSS/HTML dell'MVP: l'area di lavoro principale deve essere un container con `display: flex; flex-direction: row; overflow-x: hidden;` (il nastro di Niri).
-- [ ] Ogni MetaBuffer registrato viene renderizzato come una colonna verticale fissa (es. `width: 80vw; flex-shrink: 0;`).
-- [ ] L'integrazione di CodeMirror si estende per avere un'istanza (o una vista agganciata) per ogni singola colonna del nastro.
+- [x] Ridisegna il layout CSS/HTML dell'MVP: l'area di lavoro principale deve essere un container con `display: flex; flex-direction: row; overflow-x: hidden;` (il nastro di Niri).
+- [x] Ogni MetaBuffer registrato viene renderizzato come una colonna verticale fissa (es. `width: 80vw; flex-shrink: 0;`).
+- [x] L'integrazione di CodeMirror si estende per avere un'istanza (o una vista agganciata) per ogni singola colonna del nastro.
 
 ### 3. Animazione e Routing del Focus
-- [ ] Quando il kernel elabora un comando `FOCUS_BUFFER`, la UI deve reagire muovendo l'intero nastro orizzontale (tramite CSS `transform: translateX(...)`) per centrare visivamente la colonna del buffer focalizzato.
-- [ ] Implementa scorciatoie da tastiera native o pulsanti di navigazione orizzontale (es. `Cmd/Ctrl + Freccia Destra/Sinistra`) che inviano al kernel i rispettivi comandi di cambio focus.
+- [x] Quando il kernel elabora un comando `FOCUS_BUFFER`, la UI deve reagire muovendo l'intero nastro orizzontale (tramite CSS `transform: translateX(...)`) per centrare visivamente la colonna del buffer focalizzato.
+- [x] Implementa scorciatoie da tastiera native o pulsanti di navigazione orizzontale (es. `Cmd/Ctrl + Freccia Destra/Sinistra`) che inviano al kernel i rispettivi comandi di cambio focus.
 
 ### 4. Cross-Projection Spaziale (L'Inspector Laterale)
-- [ ] Implementa un MetaBuffer L’Inspector Spaziale è un MetaBuffer standard, senza privilegi, con scope multi‑buffer esplicitamente dichiarato e accesso in sola lettura. di tipo "Inspector Spaziale" posizionato come colonna finale del nastro o come overlay fisso.
-- [ ] Questo modulo legge in modalità sola lettura lo stato di tutti gli altri buffer presenti sul nastro e proietta una vista aggregata (statistiche globali, relazioni tra i file o log di sistema).
+- [x] Implementa un MetaBuffer L’Inspector Spaziale è un MetaBuffer standard, senza privilegi, con scope multi‑buffer esplicitamente dichiarato e accesso in sola lettura. di tipo "Inspector Spaziale" posizionato come colonna finale del nastro o come overlay fisso.
+- [x] Questo modulo legge in modalità sola lettura lo stato di tutti gli altri buffer presenti sul nastro e proietta una vista aggregata (statistiche globali, relazioni tra i file o log di sistema).
 
 ### 5. Trace‑Driven State Reconstruction (Temporal + Spatial) (La Prova del Nove)
-- [ ] Verifica il funzionamento del Time-Travel in combinazione con il layout Niri.
-- [ ] Cliccando su un vecchio Trace nel Viewer, il sistema deve ripristinare lo stato dei testi del passato e contemporaneamente spostare la telecamera (scroll orizzontale) sulla colonna esatta che era focalizzata nell'istante in cui quel Trace è stato generato.
-- [ ] Il cold start (idratazione) deve ripristinare la corretta posizione della telecamera e del focus sul nastro.
+- [x] Verifica il funzionamento del Time-Travel in combinazione con il layout Niri.
+- [x] Cliccando su un vecchio Trace nel Viewer, il sistema deve ripristinare lo stato dei testi del passato e contemporaneamente spostare la telecamera (scroll orizzontale) sulla colonna esatta che era focalizzata nell'istante in cui quel Trace è stato generato.
+- [x] Il cold start (idratazione) deve ripristinare la corretta posizione della telecamera e del focus sul nastro.
 #### Il sistema NON esegue replay dei comandi. Ricostruisce uno snapshot coerente associato a un Trace.
 
 ---
