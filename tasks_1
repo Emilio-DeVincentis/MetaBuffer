@@ -76,13 +76,13 @@ Ogni singolo task deve rispettare rigorosamente **tutte** le seguenti invarianti
 
 ---
 
-### ☐ FASE 4 — Agenti (Cittadini di Prima Classe nel Controllo)
+### ☑ FASE 4 — Agenti (Cittadini di Prima Classe nel Controllo)
 *Gli agenti sono MetaBuffer con comportamento decisionale probabilistico eseguiti esternamente.*
 
-#### Task 4.1 — MetaBuffer Agente
+#### ☑ Task 4.1 — MetaBuffer Agente
 - Crea un MetaBuffer con ruolo operativo di agente (`scope: ['js_source_code', 'diagnostics', 'suggestions', 'agent_status']`). L'agente osserva lo stato corrente e propone modifiche scrivendo in `suggestions['ai-agent']`.
 
-#### Task 4.2 — Controllo Esplicito e Tracciabilità dell'Agente
+#### ☑ Task 4.2 — Controllo Esplicito e Tracciabilità dell'Agente
 - L'attivazione dell'agente imposta `agent_status = 'REQUESTED'` ed emette un `Trace`. Il Device esterno (Neutralino) elabora l'effetto e ri-esegue il dispatch solo quando le proposte sono pronte. Nessuna azione automatica deve essere invisibile al Trace.
 
 ---

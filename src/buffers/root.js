@@ -6,7 +6,14 @@
 export const rootBuffer = {
   id: 1,
   parentId: null,
-  scope: ['active_buffers', 'focus_stack', 'pending_command', 'needs_analysis'],
+  scope: [
+    'active_buffers',
+    'focus_stack',
+    'pending_command',
+    'needs_analysis',
+    'agent_status',
+    'agent_command'
+  ],
   apply: (view) => {
     const patch = {};
     let trace = null;
@@ -41,6 +48,13 @@ export const rootBuffer = {
         patch.focus_stack = focusStack;
 
         // Structural change produces a Trace
+        trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+      } else if (command.type === 'ACTIVATE_AGENT') {
+        patch.agent_command = 'ACTIVATE';
+      } else if (command.type === 'CANCEL_AGENT') {
+        patch.agent_status = 'IDLE';
+        patch.agent_command = null;
+        // Cancellation is an act of control -> Trace
         trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
       }
 

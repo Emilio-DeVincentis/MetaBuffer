@@ -27,4 +27,17 @@
  *           The transition function. Pure logic that returns a delta and optionally a trace.
  */
 
+/**
+ * @typedef {'IDLE' | 'REQUESTED' | 'ERROR'} AgentStatus
+ */
+
+/**
+ * @typedef {Object} Suggestion
+ * @property {string} id - Unique identifier for the suggestion.
+ * @property {'edit' | 'info'} kind - The type of suggestion.
+ * @property {{ from: number, to: number }} [range] - For edits, the range to replace.
+ * @property {string} [replacement] - For edits, the new content.
+ * @property {string} explanation - Human-readable explanation.
+ */
+
 export {};
