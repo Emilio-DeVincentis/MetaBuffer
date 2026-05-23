@@ -51,6 +51,15 @@ export function projectDiagnostics(context) {
 }
 
 /**
+ * Project spatial inspector data.
+ * @param {Readonly<Record<string, unknown>>} context
+ * @returns {any}
+ */
+export function projectInspector(context) {
+    return context.inspector_state || null;
+}
+
+/**
  * Project suggestions for the agent panel.
  * @param {Readonly<Record<string, unknown>>} context
  * @returns {Record<string, Suggestion[]>}

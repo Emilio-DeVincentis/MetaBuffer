@@ -2,7 +2,7 @@
 
 import { exportState, hydrateState } from '../core/serialization.js';
 import { dispatch, setContext, reconstructState, rollback, initialize } from '../core/MetaBufferRuntime.js';
-import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } from '../core/projections.js';
+import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal, projectInspector } from '../core/projections.js';
 import { pythonAnalyzer } from './presets/python.js';
 import { javaAnalyzer } from './presets/java.js';
 import { mockAIAgent } from './presets/ai.js';
@@ -65,6 +65,7 @@ export function createShell(initialState, options = {}) {
                 workspace: projectWorkspace(context),
                 focusedId: context.focused_buffer_id,
                 diagnostics: projectDiagnostics(context),
+                inspector: projectInspector(context),
                 terminal: projectTerminal(context),
                 traces: kernelState.traceStack,
                 isPreview: isPreviewing,

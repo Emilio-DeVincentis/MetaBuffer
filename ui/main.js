@@ -93,13 +93,13 @@ term.open(document.getElementById('output-terminal'));
 // --- SHELL EVENT LISTENERS ---
 
 window.addEventListener('shell-render', (e) => {
-    const { workspace, focusedId, diagnostics, terminal, traces, isPreview, aiSuggestion, isAiGenerating } = e.detail;
+    const { workspace, focusedId, diagnostics, inspector, terminal, traces, isPreview, aiSuggestion, isAiGenerating } = e.detail;
 
     // 1. Ribbon Rendering
     renderRibbon(workspace, focusedId);
 
-    // 2. Diagnostics
-    renderDiagnostics(diagnostics);
+    // 2. Diagnostics & Inspector
+    renderDiagnostics(diagnostics, inspector);
 
     // 3. Terminal (Passive Sync)
     renderTerminal(terminal);
@@ -212,10 +212,24 @@ function renderRibbon(workspace, focusedId) {
     }
 }
 
-function renderDiagnostics(diagnostics) {
-    diagnosticsContent.innerHTML = Object.entries(diagnostics)
+function renderDiagnostics(diagnostics, inspector) {
+    let html = Object.entries(diagnostics)
         .map(([k, v]) => `<div class="diag-item"><strong>${k}</strong>: ${v.length} issues</div>`)
         .join('');
+
+    if (inspector) {
+        html += `
+            <div class="inspector-summary" style="margin-top: 20px; border-top: 1px solid #444; padding-top: 10px;">
+                <h4>Spatial Inspector</h4>
+                <div class="diag-item">Active: ${inspector.activeCount} buffers</div>
+                <div class="diag-item">Total: ${inspector.totalBuffers} buffers</div>
+                <div class="diag-item">Focus: #${inspector.focusedId}</div>
+                <div class="diag-item">History: [${inspector.focusHistory.join(',')}]</div>
+            </div>
+        `;
+    }
+
+    diagnosticsContent.innerHTML = html;
 }
 
 let lastTerminalSnapshot = "";
