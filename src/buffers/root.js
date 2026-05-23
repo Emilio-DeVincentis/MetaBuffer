@@ -120,6 +120,27 @@ export const rootBuffer = {
         patch.run_command = 'KILL';
         // Kill is an act of control -> Trace
         trace = { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] };
+      } else if (command.type === 'COMMIT_SUGGESTION') {
+          // Linear, deterministic commit of AI suggestion as inert text
+          const targetId = command.bufferId;
+          const buffers = view.state.buffers ? { ...view.state.buffers } : {};
+          if (buffers[targetId]) {
+              buffers[targetId] = {
+                  ...buffers[targetId],
+                  content: (buffers[targetId].content || '') + command.content
+              };
+              patch.buffers = buffers;
+
+              // Record commitment with audit metadata in Trace
+              trace = {
+                  id: 0,
+                  metaBufferId: 1,
+                  parentTraceId: null,
+                  scope: ['buffers'],
+                  // @ts-ignore
+                  metadata: command.metadata
+              };
+          }
       }
 
       // Always consume the command

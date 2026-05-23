@@ -4,6 +4,7 @@ import { exportState, hydrateState } from '../core/serialization.js';
 import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } from '../core/projections.js';
 import { pythonAnalyzer } from './presets/python.js';
 import { javaAnalyzer } from './presets/java.js';
+import { mockAIAgent } from './presets/ai.js';
 
 /** @typedef {import('../core/MetaBufferRuntime.js').MetaBufferRuntime} MetaBufferRuntime */
 /** @typedef {import('../types/index.js').ExecutionResult} ExecutionResult */
@@ -39,6 +40,12 @@ export class Shell {
         this.currentProcess = null;
         /** @private */
         this.db = null;
+
+        // Phase 8: Volatile Boundary Layer State
+        /** @private */
+        this.activeAISuggestion = null; // { text, bufferId, metadata }
+        /** @private */
+        this.isAiGenerating = false;
     }
 
     /**
@@ -362,6 +369,61 @@ export class Shell {
     }
 
     /**
+     * AI Integration (Phase 8: Agentic Boundary Layer)
+     */
+    async requestAISuggestion() {
+        const context = this.runtime.getContext();
+        const bufferId = context.focused_buffer_id;
+        if (!bufferId) return;
+
+        const code = projectCode(context);
+        this.isAiGenerating = true;
+        this.activeAISuggestion = { text: '', bufferId, metadata: { agent_name: mockAIAgent.name } };
+        this._render(context); // Update UI to show generating state
+
+        try {
+            const final = await mockAIAgent.complete(code, {}, (token) => {
+                this.activeAISuggestion.text += token;
+                this._render(this.runtime.getContext());
+            });
+            this.activeAISuggestion.text = final;
+            this.activeAISuggestion.metadata.timestamp = new Date().toISOString();
+        } catch (e) {
+            this._renderNotification(`AI Error: ${e.message}`);
+            this.activeAISuggestion = null;
+        } finally {
+            this.isAiGenerating = false;
+            this._render(this.runtime.getContext());
+        }
+    }
+
+    async commitAISuggestion() {
+        if (!this.activeAISuggestion) return;
+        const { text, bufferId, metadata } = this.activeAISuggestion;
+
+        // Discrete Injection: Single dispatch with final, inert string
+        await this.handleEvent(1, {
+            pending_command: {
+                type: 'COMMIT_SUGGESTION',
+                bufferId,
+                content: text,
+                metadata: {
+                    ...metadata,
+                    resolution_strategy: 'manual-accept'
+                }
+            }
+        });
+
+        this.activeAISuggestion = null;
+        this._sync();
+    }
+
+    rejectAISuggestion() {
+        this.activeAISuggestion = null;
+        this._sync();
+    }
+
+    /**
      * Push ephemeral typing to kernel.
      * @private
      */
@@ -390,7 +452,10 @@ export class Shell {
                 diagnostics: projectDiagnostics(context),
                 terminal: projectTerminal(context),
                 traces: this.runtime.getTraceStack(),
-                isPreview: this.isPreviewing
+                isPreview: this.isPreviewing,
+                // Phase 8: Volatile state
+                aiSuggestion: this.activeAISuggestion,
+                isAiGenerating: this.isAiGenerating
             }}));
         }
     }

@@ -10,9 +10,9 @@ import { transformerBuffer } from '../src/buffers/transformer.js';
 import { outputBuffer } from '../src/buffers/output.js';
 
 // --- EXTERNAL LIBS (ESM CDN) ---
-import { EditorView, basicSetup } from "https://esm.sh/codemirror";
+import { EditorView, basicSetup, Decoration, WidgetType } from "https://esm.sh/@codemirror/view";
 import { javascript } from "https://esm.sh/@codemirror/lang-javascript";
-import { EditorState } from "https://esm.sh/@codemirror/state";
+import { EditorState, StateField, StateEffect } from "https://esm.sh/@codemirror/state";
 import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark";
 import { Terminal } from "https://esm.sh/xterm";
 
@@ -41,7 +41,40 @@ const btnAnalyzePy = document.getElementById('btn-analyze-py');
 const btnAnalyzeJava = document.getElementById('btn-analyze-java');
 const btnRun = document.getElementById('btn-run');
 const btnKill = document.getElementById('btn-kill');
+const btnAi = document.getElementById('btn-ai');
+const btnAiAccept = document.getElementById('btn-ai-accept');
+const btnAiReject = document.getElementById('btn-ai-reject');
 const btnSave = document.getElementById('btn-save');
+
+const aiSuggestionBar = document.getElementById('ai-suggestion-bar');
+const aiStatus = document.getElementById('ai-status');
+
+// --- CODEMIRROR AI EXTENSION ---
+class GhostWidget extends WidgetType {
+    constructor(text) { super(); this.text = text; }
+    toDOM() {
+        let span = document.createElement("span");
+        span.className = "cm-ai-ghost";
+        span.textContent = this.text;
+        return span;
+    }
+}
+
+const setAiGhost = StateEffect.define();
+const aiGhostField = StateField.define({
+    create() { return Decoration.none },
+    update(ghosts, tr) {
+        ghosts = ghosts.map(tr.changes);
+        for (let e of tr.effects) if (e.is(setAiGhost)) {
+            ghosts = e.value ? Decoration.set([Decoration.widget({
+                widget: new GhostWidget(e.value),
+                side: 1
+            }).range(tr.state.doc.length)]) : Decoration.none;
+        }
+        return ghosts;
+    },
+    provide: f => EditorView.decorations.from(f)
+});
 
 /** @type {Map<number, EditorView>} */
 const editors = new Map(); // bufferId -> EditorView
@@ -60,7 +93,7 @@ term.open(document.getElementById('output-terminal'));
 // --- SHELL EVENT LISTENERS ---
 
 window.addEventListener('shell-render', (e) => {
-    const { workspace, focusedId, diagnostics, terminal, traces, isPreview } = e.detail;
+    const { workspace, focusedId, diagnostics, terminal, traces, isPreview, aiSuggestion, isAiGenerating } = e.detail;
 
     // 1. Ribbon Rendering
     renderRibbon(workspace, focusedId);
@@ -80,7 +113,25 @@ window.addEventListener('shell-render', (e) => {
     } else {
         notificationBanner.classList.add('hidden');
     }
+
+    // 5. AI Preview Sync
+    renderAiPreview(aiSuggestion, isAiGenerating, focusedId);
 });
+
+function renderAiPreview(suggestion, isGenerating, focusedId) {
+    if (suggestion || isGenerating) {
+        aiSuggestionBar.classList.remove('hidden');
+        aiStatus.innerText = isGenerating ? "GhostWriter is thinking..." : "GhostWriter suggestion ready.";
+
+        const view = editors.get(focusedId);
+        if (view && suggestion) {
+            view.dispatch({ effects: setAiGhost.of(suggestion.text) });
+        }
+    } else {
+        aiSuggestionBar.classList.add('hidden');
+        editors.forEach(view => view.dispatch({ effects: setAiGhost.of(null) }));
+    }
+}
 
 window.addEventListener('shell-error', (e) => {
     fatalBanner.innerText = e.detail;
@@ -123,6 +174,7 @@ function renderRibbon(workspace, focusedId) {
                             basicSetup,
                             javascript(),
                             oneDark,
+                            aiGhostField,
                             EditorView.updateListener.of((update) => {
                                 if (update.docChanged) {
                                     shell.updateEphemeralBuffer(ws.id, update.state.doc.toString());
@@ -220,6 +272,9 @@ btnAnalyzePy.onclick = () => shell.triggerExternalAnalysis('python');
 btnAnalyzeJava.onclick = () => shell.triggerExternalAnalysis('java');
 btnRun.onclick = () => shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_RUN' } });
 btnKill.onclick = () => shell.handleEvent(1, { pending_command: { type: 'KILL_RUN' } });
+btnAi.onclick = () => shell.requestAISuggestion();
+btnAiAccept.onclick = () => shell.commitAISuggestion();
+btnAiReject.onclick = () => shell.rejectAISuggestion();
 btnSave.onclick = () => shell.handleEvent(1, { type: 'COMMAND', action: 'SAVE' }); // Triggers structural sync
 
 window.addEventListener('keydown', (e) => {

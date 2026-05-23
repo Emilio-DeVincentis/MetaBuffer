@@ -43,3 +43,10 @@ Advanced analysis (Python, Java) lives strictly **outside the Core**.
 - **CodeMirror 6**: Mirroring the active MetaBuffer's text.
 - **xterm.js**: Passive view of `runtime_output`. No direct piping; it simply renders the string array projected from the current state.
 - **Niri Ribbon**: Horizontal tiling that shifts focus by translating the ribbon container.
+
+## 7. Agentic Boundary Layer (AI)
+The AI component is strictly isolated from the Kernel:
+- **MockAIAgent**: Simulates non-deterministic token generation with variable latency.
+- **Volatile Preview**: Suggestions are stored in the Shell's memory and rendered as CodeMirror decorations (ghost text).
+- **Linear Commit**: Suggestions only enter the Kernel's Trace stack when explicitly accepted via `COMMIT_SUGGESTION`.
+- **Causal Audit**: Every AI-driven mutation includes metadata (agent name, confidence, strategy) for historical auditing, preserving the system's "Scetticismo Logico".
