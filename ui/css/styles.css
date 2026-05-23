@@ -50,15 +50,17 @@ main {
 }
 
 #niri-ribbon {
+    flex: 1;
     display: flex;
     flex-direction: row;
     height: 100%;
     transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     will-change: transform;
+    overflow: hidden;
 }
 
 .column {
-    width: 80vw;
+    width: 400px;
     flex-shrink: 0;
     height: 100%;
     border-right: 2px solid #3c3c3c;
@@ -80,13 +82,24 @@ main {
     background-color: #007acc;
 }
 
-.CodeMirror {
-    height: 100% !important;
-    font-size: 14px;
+.column-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.cm-editor {
+    height: 100%;
+}
+
+#output-terminal {
+    height: 300px;
+    width: 100%;
 }
 
 #side-panels {
-    flex: 1;
+    width: 300px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     border-left: 1px solid #3c3c3c;
@@ -112,12 +125,20 @@ main {
 }
 
 .trace-item {
-    padding: 5px;
-    border: 1px solid #444;
-    margin-bottom: 5px;
+    padding: 3px 8px;
+    border-left: 2px solid #555;
+    margin-bottom: 2px;
     cursor: pointer;
-    background-color: #333;
+    background-color: #2a2a2a;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+.trace-id { color: #007acc; font-weight: bold; margin-right: 5px; }
+.trace-mb { color: #ce9178; margin-right: 5px; }
+.trace-scope { color: #6a9955; font-style: italic; }
 
 .trace-item:hover {
     background-color: #444;
@@ -128,6 +149,27 @@ main {
     background-color: #2d2d2d;
 }
 
+#ai-suggestion-bar {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #333;
+    border: 1px solid #007acc;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    z-index: 2000;
+    border-radius: 4px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.ai-actions { display: flex; gap: 10px; }
+.ai-actions button { padding: 5px 15px; cursor: pointer; }
+#btn-ai-accept { background: #6a9955; color: white; border: none; }
+#btn-ai-reject { background: #d16969; color: white; border: none; }
+
 #notification-banner {
     position: fixed;
     bottom: 20px;
@@ -137,6 +179,12 @@ main {
     color: white;
     border-radius: 4px;
     z-index: 1000;
+}
+
+.cm-ai-ghost {
+    color: #6a9955;
+    font-style: italic;
+    opacity: 0.7;
 }
 
 #fatal-banner {

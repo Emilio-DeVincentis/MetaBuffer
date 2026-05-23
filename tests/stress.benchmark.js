@@ -1,73 +1,90 @@
 // @ts-check
 import { MetaBufferRuntime } from '../src/core/MetaBufferRuntime.js';
 
+/**
+ * MetaBuffer System - Phase 7 Stress Benchmark
+ */
 async function runBenchmark() {
-  console.log('--- MetaBuffer System Stress Test ---');
+  console.log('--- MetaBuffer System Phase 7 Stress Benchmark ---');
+  console.log('Target: 100,000 Structural Dispatches');
 
   const snapshotInterval = 100;
   const runtime = new MetaBufferRuntime({ snapshotInterval });
   runtime.initialize();
 
-  const numBuffers = 1000; // Scaled down slightly for sandbox speed, but still significant
-  const numDispatches = 10000;
+  const numBuffers = 100;
+  const numDispatches = 100000;
 
-  // 1. Register many buffers
+  // 1. Register buffer pool
   for (let i = 2; i <= numBuffers + 1; i++) {
     runtime.registerBuffer({
       id: i,
-      scope: ['count', 'data'],
-      apply: (view) => ({
-        delta: { patch: { count: (/** @type {number} */ (view.state.count) || 0) + 1, data: `buffer-${i}` } },
-        trace: { id: 0, metaBufferId: i, parentTraceId: null, scope: [] }
-      })
+      // Each buffer has its own private key to avoid Root/Global conflicts
+      scope: [`buffer_${i}_state`],
+      apply: (view) => {
+          const key = `buffer_${i}_state`;
+          return {
+            delta: {
+                patch: {
+                    [key]: (/** @type {number} */ (view.state[key]) || 0) + 1
+                }
+            },
+            trace: { id: 0, metaBufferId: i, parentTraceId: null, scope: [key] }
+          };
+      }
     });
   }
 
   const startMemory = process.memoryUsage().heapUsed;
   const startTime = Date.now();
 
-  // 2. Heavy dispatch load
-  for (let i = 0; i < numDispatches; i++) {
-    const bufferId = (i % numBuffers) + 2;
-    runtime.dispatch(bufferId);
+  console.log(`Starting execution... (Heap: ${(startMemory / 1024 / 1024).toFixed(2)} MB)`);
 
-    if (i > 0 && i % 2000 === 0) {
+  // 2. Heavy dispatch load
+  for (let i = 1; i <= numDispatches; i++) {
+    const bufferId = (i % numBuffers) + 2;
+    const result = runtime.dispatch(bufferId);
+
+    if (!result.ok) {
+        console.error(`Dispatch failed at ${i}:`, result.error);
+        process.exit(1);
+    }
+
+    if (i % 20000 === 0) {
         const lapTime = Date.now() - startTime;
-        console.log(`Progress: ${i} dispatches... (${(lapTime / i).toFixed(4)} ms/op)`);
+        const currentMemory = process.memoryUsage().heapUsed;
+        console.log(`Progress: ${i} dispatches... | Time: ${lapTime}ms | Heap: ${(currentMemory / 1024 / 1024).toFixed(2)} MB | Avg: ${(lapTime / i).toFixed(4)} ms/op`);
     }
   }
 
   const endTime = Date.now();
   const endMemory = process.memoryUsage().heapUsed;
 
-  console.log('\n--- Metrics ---');
+  console.log('\n--- Final Metrics ---');
   console.log(`Total Time: ${endTime - startTime}ms`);
-  console.log(`Avg Time per Dispatch: ${(endTime - startTime) / numDispatches}ms`);
+  console.log(`Avg Time per Dispatch: ${((endTime - startTime) / numDispatches).toFixed(4)}ms`);
   console.log(`Memory Usage (Start): ${(startMemory / 1024 / 1024).toFixed(2)} MB`);
   console.log(`Memory Usage (End): ${(endMemory / 1024 / 1024).toFixed(2)} MB`);
   console.log(`Memory Growth: ${((endMemory - startMemory) / 1024 / 1024).toFixed(2)} MB`);
   console.log(`Trace Stack Size: ${runtime.getTraceStack().length}`);
   console.log(`Snapshots Stored: ${runtime.exportSnapshots().size}`);
 
-  // 3. Reconstruction test under load
+  // 3. Performance of Reconstruction at scale
   const recStartTime = Date.now();
-  const targetId = numDispatches / 2;
+  const targetId = Math.floor(numDispatches / 2);
   const recResult = runtime.reconstructState(targetId);
   const recEndTime = Date.now();
 
   console.log(`\nReconstruction of Trace ${targetId} took: ${recEndTime - recStartTime}ms`);
-  if (recResult.ok) {
-    console.log('Reconstruction successful.');
+  if (!recResult.ok) {
+    console.error('Reconstruction failed:', recResult.error);
+  } else {
+    console.log('Reconstruction verified successful.');
   }
 
-  // 4. Cleanup & GC Verification
   if (global.gc) {
-    console.log('\nInvoking GC...');
     global.gc();
-    const afterGCMemory = process.memoryUsage().heapUsed;
-    console.log(`Memory after GC: ${(afterGCMemory / 1024 / 1024).toFixed(2)} MB`);
-  } else {
-    console.log('\nGC not exposed. Run with --expose-gc for full certification.');
+    console.log(`Memory after GC: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`);
   }
 }
 
