@@ -7,7 +7,7 @@
  */
 export const mockAIAgent = {
     id: 'ai-mock-agent-v1',
-    name: 'GhostWriter-v1',
+    name: 'MockGhostWriter',
 
     /**
      * Simulates a completion request.
@@ -17,22 +17,27 @@ export const mockAIAgent = {
      * @returns {Promise<string>} Final stabilized string.
      */
     async complete(prompt, options = {}, onToken) {
-        const sentences = [
-            "\n// AI suggestion based on context:",
-            "\nfunction optimizedHelper() {",
-            "\n    return Math.sqrt(Math.PI);",
-            "\n}",
-            "\n// End of optimization."
+        const generatedTokens = [
+            "\n// AI Suggestion:\n",
+            "function",
+            " ",
+            "add(a, b)",
+            " ",
+            "{\n",
+            "    return",
+            " ",
+            "a + b;",
+            "\n}"
         ];
 
         let final = "";
-        for (const sentence of sentences) {
-            // Simulate random network latency (100-800ms)
-            const latency = Math.floor(Math.random() * 700) + 100;
+        for (const token of generatedTokens) {
+            // Simulate random latency (20-100ms)
+            const latency = Math.floor(Math.random() * 80) + 20;
             await new Promise(r => setTimeout(r, latency));
 
-            final += sentence;
-            if (onToken) onToken(sentence);
+            final += token;
+            if (onToken) onToken(token);
         }
 
         return final;
