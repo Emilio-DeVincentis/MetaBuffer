@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MetaBuffer System MVP</title>
     <link rel="stylesheet" href="css/styles.css">
-    <!-- CodeMirror CDN -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    <!-- xterm.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 </head>
 <body>
     <div id="app">
@@ -33,7 +30,7 @@
                 </div>
                 <div id="output-panel" class="panel">
                     <h3>Runtime Output</h3>
-                    <div id="output-content"></div>
+                    <div id="output-terminal"></div>
                 </div>
                 <div id="trace-panel" class="panel">
                     <h3>Trace Viewer</h3>
@@ -47,7 +44,7 @@
     <div id="fatal-banner" class="hidden"></div>
 
     <!-- Neutralino client library (if running in Neutralino) -->
-    <!-- <script src="js/neutralino.js"></script> -->
+    <script src="js/neutralino.js"></script>
     <!-- App Logic -->
     <script type="module" src="main.js"></script>
 </body>

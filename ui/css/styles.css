@@ -58,7 +58,7 @@ main {
 }
 
 .column {
-    width: 80vw;
+    width: 400px;
     flex-shrink: 0;
     height: 100%;
     border-right: 2px solid #3c3c3c;
@@ -80,9 +80,19 @@ main {
     background-color: #007acc;
 }
 
-.CodeMirror {
-    height: 100% !important;
-    font-size: 14px;
+.column-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.cm-editor {
+    height: 100%;
+}
+
+#output-terminal {
+    height: 300px;
+    width: 100%;
 }
 
 #side-panels {

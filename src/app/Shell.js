@@ -6,6 +6,14 @@ import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } fr
 /** @typedef {import('../core/MetaBufferRuntime.js').MetaBufferRuntime} MetaBufferRuntime */
 /** @typedef {import('../types/index.js').ExecutionResult} ExecutionResult */
 
+/**
+ * Shell handles the bridge between the Kernel and the Host (NeutralinoJS).
+ * Responsibilities:
+ * - Persistence (Atomic FS operations)
+ * - Process spawning and isolation
+ * - Ephemeral view state (typing)
+ * - Projection-to-UI distribution
+ */
 export class Shell {
     /**
      * @param {MetaBufferRuntime} runtime
@@ -22,14 +30,21 @@ export class Shell {
         this.isPreviewing = false;
         /** @private */
         this.ephemeralTextBuffers = new Map(); // bufferId -> string
+        /** @private */
+        this.currentProcess = null;
     }
 
     /**
      * Boot the shell: validate integrity and hydrate.
      */
     async boot() {
-        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).NL_ : null;
-        if (!NL) return { success: true };
+        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+        if (!NL) {
+            // Fallback for non-Neutralino environments (e.g. browser testing)
+            this.runtime.initialize();
+            this._sync();
+            return { success: true };
+        }
 
         // 1. Crash Check: Integrity Invariant
         try {
@@ -49,7 +64,7 @@ export class Shell {
                 const blob = await NL.filesystem.readFile(this.sessionFile);
                 const wrapper = JSON.parse(blob);
 
-                // Validate Header & Checksum (Simple implementation for MVP)
+                // Validate Header & Checksum
                 if (wrapper.version !== this.version) {
                     throw new Error('VERSION_MISMATCH: Incompatible session file.');
                 }
@@ -63,11 +78,15 @@ export class Shell {
                 if (!res.ok) throw new Error(res.error.message);
             } else {
                 this.runtime.initialize();
+                this._setInitialContext();
             }
         } catch (e) {
             this._renderFatalError(`Boot Failure: ${e.message}`);
             return { success: false, error: e };
         }
+
+        // 3. Process Event Listeners
+        this._setupNativeEventListeners(NL);
 
         this._sync();
         return { success: true };
@@ -127,8 +146,6 @@ export class Shell {
      */
     updateEphemeralBuffer(bufferId, content) {
         this.ephemeralTextBuffers.set(bufferId, content);
-        // Best-effort render for typing responsiveness
-        // Note: Does not touch the kernel or FS
     }
 
     /**
@@ -150,7 +167,10 @@ export class Shell {
             await this._persist(stateBlob);
         }
 
-        // 3. Render (UI)
+        // 3. Process Management (Shell exclusive)
+        await this._checkProcessSpawning();
+
+        // 4. Render (UI)
         this._render(context);
     }
 
@@ -159,7 +179,7 @@ export class Shell {
      * @private
      */
     async _persist(data) {
-        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).NL_ : null;
+        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
         if (!NL) return;
 
         try {
@@ -171,10 +191,86 @@ export class Shell {
             const wrappedBlob = JSON.stringify(wrapper, null, 2);
 
             await NL.filesystem.writeFile(this.tempFile, wrappedBlob);
-            await NL.filesystem.moveFile(this.tempFile, this.sessionFile);
+            // Verification: Neutralino 5.x uses move. Legacy might use moveFile.
+            // We use move as per current docs.
+            await NL.filesystem.move(this.tempFile, this.sessionFile);
         } catch (e) {
             console.error('Persistence failed:', e);
             this._renderFatalError('FileSystem Failure: Unable to persist session.');
+        }
+    }
+
+    /**
+     * Set default context for a fresh system.
+     * @private
+     */
+    _setInitialContext() {
+        this.runtime.setContext({
+            active_buffers: [1, 2, 7, 8],
+            focus_stack: [1, 2],
+            focused_buffer_id: 2,
+            buffers: {
+                1: { id: 1, kind: 'root' },
+                2: { id: 2, kind: 'editor', content: '// Welcome to MetaBuffer System\nfunction hello() {\n  console.log("Hello World");\n}' },
+                7: { id: 7, kind: 'inspector', metadata: { type: 'transformer' } },
+                8: { id: 8, kind: 'inspector', metadata: { type: 'output' } }
+            },
+            js_source_code: '',
+            diagnostics: {},
+            suggestions: {},
+            runtime_output: [],
+            agent_status: 'IDLE',
+            run_status: 'IDLE',
+            next_buffer_id: 10
+        });
+    }
+
+    /**
+     * Set up Neutralino event listeners for spawned processes.
+     * @private
+     */
+    _setupNativeEventListeners(NL) {
+        NL.events.on('spawnedProcess', async (evt) => {
+            const { id, action, data } = evt.detail;
+            if (this.currentProcess && this.currentProcess.id === id) {
+                if (action === 'stdOut') {
+                    await this.handleEvent(8, { incoming_output_chunk: { type: 'stdout', text: data } });
+                } else if (action === 'stdErr') {
+                    await this.handleEvent(8, { incoming_output_chunk: { type: 'stderr', text: data } });
+                } else if (action === 'exit') {
+                    await this.handleEvent(8, { incoming_output_chunk: { type: 'exit', code: data } });
+                    this.currentProcess = null;
+                }
+            }
+        });
+    }
+
+    /**
+     * Check if an external process needs to be spawned based on kernel state.
+     * @private
+     */
+    async _checkProcessSpawning() {
+        const context = this.runtime.getContext();
+        if (context.run_status === 'REQUESTED' && !this.currentProcess) {
+            const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+
+            if (!NL) {
+                // Mock execution for browser mode
+                await this.handleEvent(8, { run_status: 'RUNNING' });
+                await this.handleEvent(8, { incoming_output_chunk: { type: 'stdout', text: 'Neutralino not detected. Mocking execution...\n' } });
+                await this.handleEvent(8, { incoming_output_chunk: { type: 'stdout', text: `Executing code of length: ${String(context.js_source_code).length}\n` } });
+                await this.handleEvent(8, { incoming_output_chunk: { type: 'exit', code: 0 } });
+                return;
+            }
+
+            try {
+                const cmd = `node -e ${JSON.stringify(context.js_source_code)}`;
+                this.currentProcess = await NL.os.spawnProcess(cmd);
+                await this.handleEvent(8, { run_status: 'RUNNING' });
+            } catch (e) {
+                await this.handleEvent(8, { incoming_output_chunk: { type: 'stderr', text: `Spawn Failure: ${e.message}\n` } });
+                await this.handleEvent(8, { incoming_output_chunk: { type: 'exit', code: 1 } });
+            }
         }
     }
 
@@ -184,13 +280,9 @@ export class Shell {
      */
     async _commitEphemeralBuffers() {
         for (const [id, content] of this.ephemeralTextBuffers) {
-            // Ideally we'd have a 'SET_CONTENT' command or similar.
-            // For Phase 6, we use the existing UI_INPUT/Buffer context pattern.
-            // But we must do it via the bridge's logic.
-            // Actually, we can just inject into context and dispatch Root or Editor.
             this.runtime.setContext({
                 ...this.runtime.getContext(),
-                incoming_input: content, // This might need refinement based on how Editor.js works in Phase 4
+                incoming_input: content,
                 focused_buffer_id: id
             });
             this.runtime.dispatch(2); // Editor
@@ -204,8 +296,6 @@ export class Shell {
      * @private
      */
     _render(context) {
-        // This method will be bridged to the actual DOM/CodeMirror views in the UI layer.
-        // It acts as the distribution hub for projections.
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('shell-render', { detail: {
                 workspace: projectWorkspace(context),
@@ -219,7 +309,6 @@ export class Shell {
     }
 
     _calculateChecksum(str) {
-        // Suckless Checksum: Simple hash
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
             hash = ((hash << 5) - hash) + str.charCodeAt(i);
@@ -229,7 +318,7 @@ export class Shell {
     }
 
     async _fileExists(path) {
-        const NL = typeof window !== 'undefined' ? window.NL_ : null;
+        const NL = typeof window !== 'undefined' ? window.Neutralino : null;
         if (!NL) return false;
         try {
             const stats = await NL.filesystem.getStats(path);
