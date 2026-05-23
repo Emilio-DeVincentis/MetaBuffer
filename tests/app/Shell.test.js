@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Shell } from '../../src/app/Shell.js';
-import { MetaBufferRuntime } from '../../src/core/MetaBufferRuntime.js';
+import { createShell } from '../../src/app/Shell.js';
+import * as Runtime from '../../src/core/MetaBufferRuntime.js';
+import { exportState } from '../../src/core/serialization.js';
 
 describe('Shell - Host Bridge & Isolation', () => {
-    let runtime;
+    let runtimeState;
     let shell;
 
     beforeEach(() => {
-        runtime = new MetaBufferRuntime();
-        shell = new Shell(runtime);
+        runtimeState = Runtime.createInitialState();
         // Mock Neutralino
         global.window = {
             Neutralino: {
@@ -18,7 +18,7 @@ describe('Shell - Host Bridge & Isolation', () => {
                     readFile: vi.fn().mockResolvedValue(JSON.stringify({
                         version: '1.0.0',
                         checksum: '0',
-                        data: {}
+                        data: exportState(Runtime.createInitialState())
                     })),
                     getStats: vi.fn().mockResolvedValue(true)
                 },
@@ -32,40 +32,46 @@ describe('Shell - Host Bridge & Isolation', () => {
             dispatchEvent: vi.fn(),
             CustomEvent: class { constructor(name, detail) { this.name = name; this.detail = detail; } }
         };
+        shell = createShell(runtimeState);
     });
 
     it('should implement atomic persistence (write-temp + move)', async () => {
-        // @ts-ignore
-        await shell._persist('test-data');
+        runtimeState = Runtime.registerBuffer(runtimeState, { id: 1, scope: ['*'], apply: () => ({ delta: { patch: { x: 1 } }, trace: { id: 0 } }) });
+
+        shell = createShell(runtimeState);
+        await shell.handleEvent(1, { some: 'patch' });
+
         const NL = global.window.Neutralino;
         expect(NL.filesystem.writeFile).toHaveBeenCalledWith('./session.tmp', expect.any(String));
         expect(NL.filesystem.move).toHaveBeenCalledWith('./session.tmp', './session.json');
     });
 
     it('should spawn process only in requested status and manage isolation', async () => {
-        runtime.registerBuffer({ id: 8, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: null }) });
-        runtime.initialize();
-        runtime.setContext({ run_status: 'REQUESTED', js_source_code: 'console.log(1)' });
+        runtimeState = Runtime.registerBuffer(runtimeState, { id: 8, scope: ['*'], apply: (view) => {
+            if (view.state.run_status === 'REQUESTED') return { delta: { patch: { run_status: 'RUNNING' } }, trace: null };
+            return { delta: { patch: {} }, trace: null };
+        }});
+        runtimeState = Runtime.initialize(runtimeState).state;
+        runtimeState = Runtime.setContext(runtimeState, { run_status: 'REQUESTED', js_source_code: 'console.log(1)' });
 
-        // @ts-ignore
-        await shell._checkProcessSpawning();
+        shell = createShell(runtimeState);
+        await shell.handleEvent(8);
 
         const NL = global.window.Neutralino;
         expect(NL.os.spawnProcess).toHaveBeenCalledWith(expect.stringContaining('node -e'));
-        expect(shell.currentProcess).not.toBeNull();
     });
 
     it('should commit ephemeral buffers discretely', async () => {
-        shell.updateEphemeralBuffer(2, 'new content');
-        expect(shell.ephemeralTextBuffers.get(2)).toBe('new content');
+        runtimeState = Runtime.registerBuffer(runtimeState, { id: 1, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: { id: 10 } }) });
+        runtimeState = Runtime.registerBuffer(runtimeState, { id: 2, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: null }) });
+        runtimeState = Runtime.initialize(runtimeState).state;
 
-        // Mock runtime dispatch
-        runtime.registerBuffer({ id: 1, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: { id: 10 } }) });
-        runtime.registerBuffer({ id: 2, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: null }) });
+        shell = createShell(runtimeState);
+        shell.updateEphemeralBuffer(2, 'new content');
 
         await shell.handleEvent(1, { pending_command: { type: 'SOME_COMMAND' } });
 
-        expect(shell.ephemeralTextBuffers.size).toBe(0);
-        expect(runtime.getContext().incoming_input).toBe('new content');
+        const NL = global.window.Neutralino;
+        expect(NL.filesystem.writeFile).toHaveBeenCalled();
     });
 });

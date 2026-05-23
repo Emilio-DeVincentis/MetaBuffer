@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MetaBufferRuntime } from '../src/core/MetaBufferRuntime.js';
-import { exportState, hydrateState, canonicalStringify } from '../src/core/serialization.js';
+import * as Runtime from '../src/core/MetaBufferRuntime.js';
+import { exportState, hydrateState } from '../src/core/serialization.js';
+import { canonicalStringify } from '../src/core/utils.js';
 
 describe('MetaBufferRuntime - Phase 3.5 (Serialization & Hydration)', () => {
-  let runtime;
+  let state;
 
   beforeEach(() => {
-    runtime = new MetaBufferRuntime();
-    runtime.initialize(); // Generates bootstrap trace
-    runtime.registerBuffer({
+    state = Runtime.createInitialState();
+    state = Runtime.initialize(state).state; // Generates bootstrap trace
+    state = Runtime.registerBuffer(state, {
       id: 1,
       scope: ['a', 'b'],
       apply: (view) => ({ delta: { patch: { a: 1 } }, trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] } })
@@ -16,30 +17,30 @@ describe('MetaBufferRuntime - Phase 3.5 (Serialization & Hydration)', () => {
   });
 
   it('should export and hydrate state successfully', () => {
-    runtime.setContext({ a: 10, b: 20 });
-    runtime.dispatch(1);
+    state = Runtime.setContext(state, { a: 10, b: 20 });
+    state = Runtime.dispatch(state, 1).state;
 
-    const blob = exportState(runtime);
-    const newRuntime = new MetaBufferRuntime();
+    const blob = exportState(state);
+    let newState = Runtime.createInitialState();
 
-    const result = hydrateState(newRuntime, blob);
+    const result = hydrateState(newState, blob);
+    newState = result.state;
 
     expect(result.ok).toBe(true);
-    expect(newRuntime.getContext()).toEqual(runtime.getContext());
-    expect(newRuntime.getTraceStack()).toEqual(runtime.getTraceStack());
-    // @ts-ignore
-    expect(newRuntime.nextTraceId).toBe(runtime.getTraceStack().length + 1);
+    expect(newState.context).toEqual(state.context);
+    expect(newState.traceStack).toEqual(state.traceStack);
+    expect(newState.nextTraceId).toBe(state.traceStack.length + 1);
   });
 
   it('should satisfy idempotency: export(hydrate(export(state))) === export(state)', () => {
-    runtime.setContext({ z: 9, x: { b: 1, a: 2 } });
-    runtime.dispatch(1);
+    state = Runtime.setContext(state, { z: 9, x: { b: 1, a: 2 } });
+    state = Runtime.dispatch(state, 1).state;
 
-    const blob1 = exportState(runtime);
+    const blob1 = exportState(state);
 
-    const newRuntime = new MetaBufferRuntime();
-    hydrateState(newRuntime, blob1);
-    const blob2 = exportState(newRuntime);
+    let newState = Runtime.createInitialState();
+    newState = hydrateState(newState, blob1).state;
+    const blob2 = exportState(newState);
 
     expect(blob1).toBe(blob2);
   });
@@ -53,8 +54,8 @@ describe('MetaBufferRuntime - Phase 3.5 (Serialization & Hydration)', () => {
       nextTraceId: 3
     });
 
-    const newRuntime = new MetaBufferRuntime();
-    const result = hydrateState(newRuntime, invalidBlob);
+    let newState = Runtime.createInitialState();
+    const result = hydrateState(newState, invalidBlob);
 
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe('ERR_CORE_BOOTSTRAP_MISSING');
@@ -69,20 +70,20 @@ describe('MetaBufferRuntime - Phase 3.5 (Serialization & Hydration)', () => {
   });
 
   it('should continue trace sequence correctly after hydration', () => {
-    runtime.dispatch(1);
-    const blob = exportState(runtime);
+    state = Runtime.dispatch(state, 1).state;
+    const blob = exportState(state);
 
-    const newRuntime = new MetaBufferRuntime();
-    newRuntime.registerBuffer({
+    let newState = Runtime.createInitialState();
+    newState = Runtime.registerBuffer(newState, {
       id: 1,
       scope: ['a'],
       apply: () => ({ delta: null, trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] } })
     });
 
-    hydrateState(newRuntime, blob);
-    newRuntime.dispatch(1);
+    newState = hydrateState(newState, blob).state;
+    newState = Runtime.dispatch(newState, 1).state;
 
-    const stack = newRuntime.getTraceStack();
+    const stack = newState.traceStack;
     expect(stack.length).toBe(3); // Bootstrap + dispatch1 + dispatch2
     expect(stack[2].id).toBe(3);
     expect(stack[2].parentTraceId).toBe(2);
