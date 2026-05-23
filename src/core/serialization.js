@@ -14,7 +14,10 @@ export function exportState(state) {
   const exportable = {
     context: state.context,
     traceStack: state.traceStack,
-    nextTraceId: state.nextTraceId
+    nextTraceId: state.nextTraceId,
+    snapshotInterval: state.snapshotInterval,
+    // Map needs conversion for JSON serialization
+    snapshots: Array.from(state.snapshots.entries())
   };
 
   return canonicalStringify(exportable);
@@ -46,10 +49,11 @@ export function hydrateState(state, blob) {
         context: data.context || {},
         traceStack: [...data.traceStack],
         nextTraceId: data.nextTraceId || (data.traceStack.reduce((max, t) => Math.max(max, t.id), 0) + 1),
-        snapshots: new Map() // Clear snapshots as they might be inconsistent
+        snapshotInterval: data.snapshotInterval || state.snapshotInterval,
+        snapshots: new Map(data.snapshots || [])
     };
 
-    return { ...success(true), state: newState };
+    return { ...success(newState), state: newState };
   } catch (e) {
     return failure('ERR_CORE_HYDRATION_FAILURE', e instanceof Error ? e.message : 'Invalid state blob');
   }
