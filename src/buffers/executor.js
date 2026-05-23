@@ -30,6 +30,14 @@ export const executorBuffer = {
 
       // Activation is a structural control change
       trace = { id: 0, metaBufferId: 5, parentTraceId: null, scope: [] };
+
+      return {
+          delta: {
+              patch,
+              signals: [{ kind: 'EXECUTION_STARTED', target: null, payload: view.state.js_source_code }]
+          },
+          trace
+      };
     }
 
     // 2. Handle Incoming Output (Streaming)

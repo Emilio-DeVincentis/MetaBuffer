@@ -55,6 +55,9 @@ export const jsAnalyzerBuffer = {
   parentId: 2, // Child of Editor
   scope: ['js_source_code', 'diagnostics'],
   apply: (view) => {
+    const signal = view.incomingSignals?.find(s => s.kind === 'REQUEST_ANALYSIS');
+    if (!signal) return { delta: { patch: {} }, trace: null };
+
     const code = view.state.js_source_code || '';
     const results = analyzeJS(code);
 

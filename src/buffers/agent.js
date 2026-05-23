@@ -30,6 +30,7 @@ export const agentBuffer = {
 
       // Activation is a structural control change
       trace = { id: 0, metaBufferId: 4, parentTraceId: null, scope: [] };
+      return { delta: { patch, signals: [{ kind: 'AGENT_REQUESTED' }] }, trace };
     }
 
     // 2. Handle Consolidation of Asynchronous Result (injected by Device)

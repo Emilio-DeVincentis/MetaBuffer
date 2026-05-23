@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaBuffer System MVP</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- CodeMirror CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>MetaBuffer System</h1>
+            <div class="toolbar">
+                <button id="btn-analyze">Analyze</button>
+                <button id="btn-run">Run</button>
+                <button id="btn-kill">Kill</button>
+                <button id="btn-save">Save State</button>
+            </div>
+        </header>
+        <main>
+            <div id="niri-ribbon">
+                <!-- Columns will be injected here -->
+            </div>
+            <div id="side-panels">
+                <div id="diagnostics-panel" class="panel">
+                    <h3>Diagnostics</h3>
+                    <div id="diagnostics-content"></div>
+                </div>
+                <div id="output-panel" class="panel">
+                    <h3>Runtime Output</h3>
+                    <div id="output-content"></div>
+                </div>
+                <div id="trace-panel" class="panel">
+                    <h3>Trace Viewer</h3>
+                    <div id="trace-content"></div>
+                </div>
+            </div>
+        </main>
+        <div id="notification-banner" class="hidden"></div>
+    </div>
+
+    <div id="fatal-banner" class="hidden"></div>
+
+    <!-- Neutralino client library (if running in Neutralino) -->
+    <!-- <script src="js/neutralino.js"></script> -->
+    <!-- App Logic -->
+    <script type="module" src="main.js"></script>
+</body>
+</html>

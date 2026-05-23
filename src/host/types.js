@@ -2,7 +2,7 @@
 
 /**
  * @typedef {Object} HostEvent
- * @property {'UI_INPUT' | 'PROCESS_OUTPUT' | 'PROCESS_EXIT' | 'AGENT_RESULT'} kind
+ * @property {'UI_INPUT' | 'PROCESS_OUTPUT' | 'PROCESS_EXIT' | 'AGENT_RESULT' | 'COMMAND'} kind
  * @property {unknown} payload
  */
 
