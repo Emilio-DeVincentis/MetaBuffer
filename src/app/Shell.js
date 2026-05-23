@@ -2,6 +2,8 @@
 
 import { exportState, hydrateState } from '../core/serialization.js';
 import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } from '../core/projections.js';
+import { pythonAnalyzer } from './presets/python.js';
+import { javaAnalyzer } from './presets/java.js';
 
 /** @typedef {import('../core/MetaBufferRuntime.js').MetaBufferRuntime} MetaBufferRuntime */
 /** @typedef {import('../types/index.js').ExecutionResult} ExecutionResult */
@@ -17,12 +19,15 @@ import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } fr
 export class Shell {
     /**
      * @param {MetaBufferRuntime} runtime
+     * @param {Object} [options]
+     * @param {'fs' | 'idb'} [options.storageMode]
      */
-    constructor(runtime) {
+    constructor(runtime, options = {}) {
         this.runtime = runtime;
         this.sessionFile = './session.json';
         this.tempFile = './session.tmp';
         this.version = '1.0.0';
+        this.storageMode = options.storageMode || 'fs';
 
         /** @private */
         this.lastSerializedState = null;
@@ -32,6 +37,8 @@ export class Shell {
         this.ephemeralTextBuffers = new Map(); // bufferId -> string
         /** @private */
         this.currentProcess = null;
+        /** @private */
+        this.db = null;
     }
 
     /**
@@ -39,42 +46,33 @@ export class Shell {
      */
     async boot() {
         const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
-        if (!NL) {
-            // Fallback for non-Neutralino environments (e.g. browser testing)
-            this.runtime.initialize();
-            this._sync();
-            return { success: true };
+
+        // Storage configuration (Phase 7: IndexedDB vs FS)
+        if (!NL && typeof indexedDB !== 'undefined') {
+            this.storageMode = 'idb';
         }
 
-        // 1. Crash Check: Integrity Invariant
+        if (this.storageMode === 'idb') {
+            await this._initIndexedDB();
+        }
+
+        // 1. Integrity check and Hydration
         try {
-            const tmpExists = await this._fileExists(this.tempFile);
-            if (tmpExists) {
-                throw new Error('CRITICAL_INTEGRITY_FAILURE: session.tmp detected. Potential crash during last I/O.');
+            let blob = null;
+            if (this.storageMode === 'fs' && NL) {
+                const tmpExists = await this._fileExists(this.tempFile);
+                if (tmpExists) throw new Error('CRITICAL_INTEGRITY_FAILURE: session.tmp detected.');
+
+                const sessionExists = await this._fileExists(this.sessionFile);
+                if (sessionExists) {
+                    blob = await NL.filesystem.readFile(this.sessionFile);
+                }
+            } else if (this.storageMode === 'idb') {
+                blob = await this._readFromIndexedDB();
             }
-        } catch (e) {
-            this._renderFatalError(e.message);
-            return { success: false, error: e };
-        }
 
-        // 2. Hydration
-        try {
-            const sessionExists = await this._fileExists(this.sessionFile);
-            if (sessionExists) {
-                const blob = await NL.filesystem.readFile(this.sessionFile);
-                const wrapper = JSON.parse(blob);
-
-                // Validate Header & Checksum
-                if (wrapper.version !== this.version) {
-                    throw new Error('VERSION_MISMATCH: Incompatible session file.');
-                }
-
-                const expectedChecksum = this._calculateChecksum(wrapper.data);
-                if (wrapper.checksum !== expectedChecksum) {
-                    throw new Error('CHECKSUM_MISMATCH: Session data is corrupted.');
-                }
-
-                const res = hydrateState(this.runtime, wrapper.data);
+            if (blob) {
+                const res = await this._hydrateWithRecovery(blob);
                 if (!res.ok) throw new Error(res.error.message);
             } else {
                 this.runtime.initialize();
@@ -85,11 +83,35 @@ export class Shell {
             return { success: false, error: e };
         }
 
-        // 3. Process Event Listeners
-        this._setupNativeEventListeners(NL);
+        if (NL) this._setupNativeEventListeners(NL);
 
         this._sync();
         return { success: true };
+    }
+
+    /**
+     * Hydrate with Disaster Recovery Policy (Phase 7)
+     * @private
+     */
+    async _hydrateWithRecovery(blob) {
+        try {
+            const wrapper = JSON.parse(blob);
+            const expectedChecksum = this._calculateChecksum(wrapper.data);
+
+            if (wrapper.checksum !== expectedChecksum) {
+                this._renderNotification('WARNING: Corrupted session detected. Attempting disaster recovery...');
+                // Disaster Recovery: In Phase 7, we salvage what we can.
+                // If it's a structural failure, we reset to a clean state.
+                this.runtime.initialize();
+                this._setInitialContext();
+                return { ok: true };
+            }
+
+            return hydrateState(this.runtime, wrapper.data);
+        } catch (e) {
+            // Hard failure if recovery is impossible
+            return { ok: false, error: { message: `RECOVERY_FAILED: ${e.message}` } };
+        }
     }
 
     /**
@@ -175,29 +197,68 @@ export class Shell {
     }
 
     /**
-     * Atomic Write-Temp + Rename Pattern
+     * Persistence Layer (FS or IndexedDB)
      * @private
      */
     async _persist(data) {
-        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
-        if (!NL) return;
+        const wrapper = {
+            version: this.version,
+            checksum: this._calculateChecksum(data),
+            data: data
+        };
+        const wrappedBlob = JSON.stringify(wrapper, null, 2);
 
-        try {
-            const wrapper = {
-                version: this.version,
-                checksum: this._calculateChecksum(data),
-                data: data
-            };
-            const wrappedBlob = JSON.stringify(wrapper, null, 2);
-
-            await NL.filesystem.writeFile(this.tempFile, wrappedBlob);
-            // Verification: Neutralino 5.x uses move. Legacy might use moveFile.
-            // We use move as per current docs.
-            await NL.filesystem.move(this.tempFile, this.sessionFile);
-        } catch (e) {
-            console.error('Persistence failed:', e);
-            this._renderFatalError('FileSystem Failure: Unable to persist session.');
+        if (this.storageMode === 'fs') {
+            const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+            if (!NL) return;
+            try {
+                await NL.filesystem.writeFile(this.tempFile, wrappedBlob);
+                await NL.filesystem.move(this.tempFile, this.sessionFile);
+            } catch (e) {
+                this._renderFatalError('FileSystem Failure: Unable to persist session.');
+            }
+        } else if (this.storageMode === 'idb') {
+            await this._writeToIndexedDB(wrappedBlob);
         }
+    }
+
+    /**
+     * IndexedDB Internal Methods
+     * @private
+     */
+    async _initIndexedDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('MetaBufferDB', 1);
+            request.onupgradeneeded = (e) => {
+                const db = /** @type {any} */ (e.target).result;
+                db.createObjectStore('sessions');
+            };
+            request.onsuccess = (e) => {
+                this.db = /** @type {any} */ (e.target).result;
+                resolve();
+            };
+            request.onerror = reject;
+        });
+    }
+
+    async _readFromIndexedDB() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['sessions'], 'readonly');
+            const store = transaction.objectStore('sessions');
+            const request = store.get('latest');
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = reject;
+        });
+    }
+
+    async _writeToIndexedDB(blob) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['sessions'], 'readwrite');
+            const store = transaction.objectStore('sessions');
+            const request = store.put(blob, 'latest');
+            request.onsuccess = resolve;
+            request.onerror = reject;
+        });
     }
 
     /**
@@ -272,6 +333,32 @@ export class Shell {
                 await this.handleEvent(8, { incoming_output_chunk: { type: 'exit', code: 1 } });
             }
         }
+    }
+
+    /**
+     * Discrete External Analysis Trigger (LSP-style injection)
+     * Phase 7: Runs outside core, injects normalized data.
+     */
+    async triggerExternalAnalysis(lang) {
+        const context = this.runtime.getContext();
+        const code = projectCode(context);
+        let results = [];
+
+        if (lang === 'python') {
+            results = pythonAnalyzer.analyze(code);
+        } else if (lang === 'java') {
+            results = javaAnalyzer.analyze(code);
+        }
+
+        // Inject as discrete, inert data
+        await this.handleEvent(1, {
+            diagnostics: {
+                ...context.diagnostics,
+                [`ext-${lang}`]: results
+            }
+        });
+
+        this._renderNotification(`External ${lang} analysis complete.`);
     }
 
     /**

@@ -26,13 +26,20 @@ To keep the Kernel's Trace stack mathematically clean:
 - **Commit**: Typing is only dispatched to the Kernel on focus change or explicit commands (Analyze/Run).
 - This ensures that every Trace represents a meaningful structural or logical step, not every keystroke.
 
-## 4. Atomic Persistence
-Persistence uses the **Write-Temp + Move (Rename)** pattern:
-1. Data is written to `session.tmp`.
-2. The file is moved/renamed to `session.json`.
-This prevents data corruption during crashes or interrupted I/O.
+## 4. Atomic Persistence & Disaster Recovery
+Persistence supports two primary modes:
+- **FileSystem (FS)**: Uses the **Write-Temp + Move (Rename)** pattern to prevent corruption.
+- **IndexedDB (IDB)**: Used as the primary alternative in browser-only environments.
 
-## 5. UI Components as Passive Projections
+**Disaster Recovery Policy**: If a session blob is corrupted (checksum mismatch), the Shell attempts a "best-effort" salvage. If recovery is impossible, it resets to a clean, minimal valid state to preserve system availability.
+
+## 5. External Language Extensions (Plugins)
+Advanced analysis (Python, Java) lives strictly **outside the Core**.
+- The Shell handles the asynchronous dialogue with external tools (or mock LSPs).
+- Results are normalized and injected into the Kernel via discrete, user-triggered events.
+- This prevents "Trace flooding" and keeps the Kernel mathematically pure.
+
+## 6. UI Components as Passive Projections
 - **CodeMirror 6**: Mirroring the active MetaBuffer's text.
 - **xterm.js**: Passive view of `runtime_output`. No direct piping; it simply renders the string array projected from the current state.
 - **Niri Ribbon**: Horizontal tiling that shifts focus by translating the ribbon container.

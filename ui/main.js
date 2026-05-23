@@ -37,6 +37,8 @@ const notificationBanner = document.getElementById('notification-banner');
 const fatalBanner = document.getElementById('fatal-banner');
 
 const btnAnalyze = document.getElementById('btn-analyze');
+const btnAnalyzePy = document.getElementById('btn-analyze-py');
+const btnAnalyzeJava = document.getElementById('btn-analyze-java');
 const btnRun = document.getElementById('btn-run');
 const btnKill = document.getElementById('btn-kill');
 const btnSave = document.getElementById('btn-save');
@@ -176,13 +178,37 @@ function renderTerminal(terminal) {
 
 function renderTraces(traces) {
     traceContent.innerHTML = '';
-    traces.slice().reverse().forEach(t => {
+
+    // Build causality map
+    const childrenMap = new Map(); // parentId -> child[]
+    const rootTraces = [];
+
+    traces.forEach(t => {
+        if (t.parentTraceId === null) {
+            rootTraces.push(t);
+        } else {
+            if (!childrenMap.has(t.parentTraceId)) childrenMap.set(t.parentTraceId, []);
+            childrenMap.get(t.parentTraceId).push(t);
+        }
+    });
+
+    const renderNode = (trace, depth = 0) => {
         const div = document.createElement('div');
         div.className = 'trace-item';
-        div.innerText = `ID: ${t.id} (MB: ${t.metaBufferId})`;
-        div.onclick = () => window.timeTravel(t.id);
+        div.style.marginLeft = `${depth * 15}px`;
+        div.innerHTML = `
+            <span class="trace-id">#${trace.id}</span>
+            <span class="trace-mb">MB:${trace.metaBufferId}</span>
+            <span class="trace-scope">[${trace.scope.join(',')}]</span>
+        `;
+        div.onclick = () => window.timeTravel(trace.id);
         traceContent.appendChild(div);
-    });
+
+        const children = childrenMap.get(trace.id) || [];
+        children.forEach(c => renderNode(c, depth + 1));
+    };
+
+    rootTraces.forEach(r => renderNode(r));
 }
 
 window.timeTravel = (id) => shell.timeTravel(id);
@@ -190,6 +216,8 @@ window.timeTravel = (id) => shell.timeTravel(id);
 // --- INPUT HANDLERS ---
 
 btnAnalyze.onclick = () => shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_BUFFER', bufferId: 3 } });
+btnAnalyzePy.onclick = () => shell.triggerExternalAnalysis('python');
+btnAnalyzeJava.onclick = () => shell.triggerExternalAnalysis('java');
 btnRun.onclick = () => shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_RUN' } });
 btnKill.onclick = () => shell.handleEvent(1, { pending_command: { type: 'KILL_RUN' } });
 btnSave.onclick = () => shell.handleEvent(1, { type: 'COMMAND', action: 'SAVE' }); // Triggers structural sync
