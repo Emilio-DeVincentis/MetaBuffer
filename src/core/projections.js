@@ -22,7 +22,7 @@ export function projectCode(context) {
 /**
  * Projects all workspace buffers.
  * @param {Readonly<Record<string, unknown>>} context
- * @returns {any[]}
+ * @returns {import('../types/index.js').MetaBuffer[]}
  */
 export function projectWorkspace(context) {
     if (!context.buffers) return [];

@@ -241,10 +241,10 @@ const validatePatch = (buffer, patch) => {
 /**
  * Internal helper to set context value, supporting dot-notation.
  * Returns a new context object.
- * @param {Record<string, any>} context
+ * @param {Record<string, unknown>} context
  * @param {string} key
- * @param {any} value
- * @returns {Record<string, any>}
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
  */
 const setContextValue = (context, key, value) => {
     if (!key.includes('.')) {

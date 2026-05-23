@@ -1,5 +1,5 @@
-import { MetaBufferRuntime } from '../src/core/MetaBufferRuntime.js';
-import { Shell } from '../src/app/Shell.js';
+import * as Runtime from '../src/core/MetaBufferRuntime.js';
+import { createShell } from '../src/app/Shell.js';
 import { rootBuffer } from '../src/buffers/root.js';
 import { editorBuffer } from '../src/buffers/editor.js';
 import { jsAnalyzerBuffer } from '../src/buffers/jsAnalyzer.js';
@@ -17,17 +17,17 @@ import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark";
 import { Terminal } from "https://esm.sh/xterm";
 
 // Setup Core
-const runtime = new MetaBufferRuntime();
-runtime.registerBuffer(rootBuffer);
-runtime.registerBuffer(editorBuffer);
-runtime.registerBuffer(jsAnalyzerBuffer);
-runtime.registerBuffer(agentBuffer);
-runtime.registerBuffer(executorBuffer);
-runtime.registerBuffer(spatialInspectorBuffer);
-runtime.registerBuffer(transformerBuffer);
-runtime.registerBuffer(outputBuffer);
+let kernelState = Runtime.createInitialState();
+kernelState = Runtime.registerBuffer(kernelState, rootBuffer);
+kernelState = Runtime.registerBuffer(kernelState, editorBuffer);
+kernelState = Runtime.registerBuffer(kernelState, jsAnalyzerBuffer);
+kernelState = Runtime.registerBuffer(kernelState, agentBuffer);
+kernelState = Runtime.registerBuffer(kernelState, executorBuffer);
+kernelState = Runtime.registerBuffer(kernelState, spatialInspectorBuffer);
+kernelState = Runtime.registerBuffer(kernelState, transformerBuffer);
+kernelState = Runtime.registerBuffer(kernelState, outputBuffer);
 
-const shell = new Shell(runtime);
+const shell = createShell(kernelState);
 
 // UI Elements
 const ribbon = document.getElementById('niri-ribbon');

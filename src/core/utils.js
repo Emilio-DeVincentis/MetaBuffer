@@ -33,7 +33,7 @@ export function deepFreeze(obj) {
  * Deterministic JSON stringify helper (canonical ordering).
  * Ensures that objects with the same keys in different orders produce identical strings.
  *
- * @param {any} obj - The value to stringify.
+ * @param {unknown} obj - The value to stringify.
  * @returns {string}
  */
 export function canonicalStringify(obj) {
