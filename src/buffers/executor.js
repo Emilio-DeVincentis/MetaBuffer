@@ -1,8 +1,18 @@
 // @ts-check
 
 /** @typedef {import('../types/index.js').MetaBuffer} MetaBuffer */
-/** @typedef {import('../types/index.js').OutputChunk} OutputChunk */
-/** @typedef {import('../types/index.js').RunStatus} RunStatus */
+
+const handlers = {
+    ACTIVATE: (state) => ({
+        patch: {
+            run_status: 'REQUESTED',
+            run_command: null,
+            runtime_output: []
+        },
+        signals: [{ kind: 'EXECUTION_STARTED', target: null, payload: state.js_source_code }],
+        trace: { id: 0, metaBufferId: 5, parentTraceId: null, scope: [] }
+    })
+};
 
 /** @type {MetaBuffer} */
 export const executorBuffer = {
@@ -16,31 +26,22 @@ export const executorBuffer = {
     'incoming_output_chunk'
   ],
   apply: (view) => {
-    const patch = {};
+    let patch = {};
+    let signals = [];
     let trace = null;
 
     const command = view.state.run_command;
     const chunk = view.state.incoming_output_chunk;
 
-    // 1. Handle Execution Request
-    if (command === 'ACTIVATE') {
-      patch.run_status = 'REQUESTED';
-      patch.run_command = null; // Consume command
-      patch.runtime_output = []; // Reset output for new run
-
-      // Activation is a structural control change
-      trace = { id: 0, metaBufferId: 5, parentTraceId: null, scope: [] };
-
-      return {
-          delta: {
-              patch,
-              signals: [{ kind: 'EXECUTION_STARTED', target: null, payload: view.state.js_source_code }]
-          },
-          trace
-      };
+    // 1. Handle Commands via ADT
+    if (command && handlers[command]) {
+        const result = handlers[command](view.state);
+        patch = { ...patch, ...result.patch };
+        signals = [...signals, ...(result.signals || [])];
+        trace = result.trace;
     }
 
-    // 2. Handle Incoming Output (Streaming)
+    // 2. Handle Incoming Output (Streaming) - Discrete content mutation
     if (chunk) {
       const output = Array.isArray(view.state.runtime_output)
         ? [...view.state.runtime_output]
@@ -54,10 +55,8 @@ export const executorBuffer = {
       if (chunk.type === 'exit') {
         patch.run_status = 'IDLE';
       }
-
-      // NO TRACE for content mutation (streaming)
     }
 
-    return { delta: { patch }, trace };
+    return { delta: { patch, signals }, trace };
   }
 };

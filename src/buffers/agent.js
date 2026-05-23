@@ -4,6 +4,14 @@
 /** @typedef {import('../types/index.js').Suggestion} Suggestion */
 /** @typedef {import('../types/index.js').AgentStatus} AgentStatus */
 
+const handlers = {
+    ACTIVATE: () => ({
+        patch: { agent_status: 'REQUESTED', agent_command: null },
+        signals: [{ kind: 'AGENT_REQUESTED' }],
+        trace: { id: 0, metaBufferId: 4, parentTraceId: null, scope: [] }
+    })
+};
+
 /** @type {MetaBuffer} */
 export const agentBuffer = {
   id: 4,
@@ -17,34 +25,31 @@ export const agentBuffer = {
     'diagnostics'
   ],
   apply: (view) => {
-    const patch = {};
+    let patch = {};
+    let signals = [];
     let trace = null;
 
     const command = view.state.agent_command;
     const result = view.state.pending_agent_result;
 
-    // 1. Handle Activation Command
-    if (command === 'ACTIVATE') {
-      patch.agent_status = 'REQUESTED';
-      patch.agent_command = null; // Consume command
-
-      // Activation is a structural control change
-      trace = { id: 0, metaBufferId: 4, parentTraceId: null, scope: [] };
-      return { delta: { patch, signals: [{ kind: 'AGENT_REQUESTED' }] }, trace };
+    // 1. Handle Commands via ADT
+    if (command && handlers[command]) {
+        const res = handlers[command]();
+        patch = { ...patch, ...res.patch };
+        signals = [...signals, ...(res.signals || [])];
+        trace = res.trace;
     }
 
-    // 2. Handle Consolidation of Asynchronous Result (injected by Device)
+    // 2. Handle Consolidation
     if (result) {
       const currentSuggestions = view.state.suggestions ? { ...view.state.suggestions } : {};
       currentSuggestions['ai-agent'] = result;
 
       patch.suggestions = currentSuggestions;
       patch.agent_status = 'IDLE';
-      patch.pending_agent_result = null; // Consume result
-
-      // NO TRACE for consolidation as per specifications
+      patch.pending_agent_result = null;
     }
 
-    return { delta: { patch }, trace };
+    return { delta: { patch, signals }, trace };
   }
 };

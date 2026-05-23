@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MetaBufferRuntime } from '../src/core/MetaBufferRuntime.js';
+import * as Runtime from '../src/core/MetaBufferRuntime.js';
 
 describe('MetaBufferRuntime - Phase 1', () => {
-  let runtime;
+  let state;
 
   beforeEach(() => {
-    runtime = new MetaBufferRuntime();
+    state = Runtime.createInitialState();
   });
 
   it('should register and dispatch a MetaBuffer', () => {
@@ -21,21 +21,22 @@ describe('MetaBufferRuntime - Phase 1', () => {
       }
     };
 
-    runtime.registerBuffer(buffer);
-    runtime.dispatch(1);
+    state = Runtime.registerBuffer(state, buffer);
+    const result = Runtime.dispatch(state, 1);
+    state = result.state;
 
-    expect(runtime.getContext().text).toBe('Hello World');
-    expect(runtime.getTraceStack().length).toBe(1);
-    expect(runtime.getTraceStack()[0].metaBufferId).toBe(1);
+    expect(state.context.text).toBe('Hello World');
+    expect(state.traceStack.length).toBe(1);
+    expect(state.traceStack[0].metaBufferId).toBe(1);
   });
 
   it('should enforce scope isolation for reading', () => {
-    runtime.setContext({ secret: 'hidden', public: 'visible' });
+    state = Runtime.setContext(state, { secret: 'hidden', public: 'visible' });
 
     const buffer = {
       id: 2,
       parentId: null,
-      scope: ['public'],
+      scope: ['public', 'observedSecret'],
       apply: (view) => {
         // 'secret' should not be in the view.state
         const secretVisible = view.state.secret !== undefined;
@@ -46,12 +47,10 @@ describe('MetaBufferRuntime - Phase 1', () => {
       }
     };
 
-    runtime.registerBuffer(buffer);
-    // Add observedSecret to scope so we can write it
-    buffer.scope.push('observedSecret');
-
-    runtime.dispatch(2);
-    expect(runtime.getContext().observedSecret).toBe(false);
+    state = Runtime.registerBuffer(state, buffer);
+    const result = Runtime.dispatch(state, 2);
+    state = result.state;
+    expect(state.context.observedSecret).toBe(false);
   });
 
   it('should enforce scope isolation for writing', () => {
@@ -72,11 +71,12 @@ describe('MetaBufferRuntime - Phase 1', () => {
       }
     };
 
-    runtime.registerBuffer(buffer);
-    runtime.dispatch(3);
+    state = Runtime.registerBuffer(state, buffer);
+    const result = Runtime.dispatch(state, 3);
+    state = result.state;
 
-    expect(runtime.getContext().allowed).toBe('success');
-    expect(runtime.getContext().forbidden).toBeUndefined();
+    expect(state.context.allowed).toBe('success');
+    expect(state.context.forbidden).toBeUndefined();
   });
 
   it('should correctly link traces in the stack', () => {
@@ -94,13 +94,13 @@ describe('MetaBufferRuntime - Phase 1', () => {
       apply: () => ({ delta: null, trace: { id: 0, metaBufferId: 0, parentTraceId: null, scope: [] } })
     };
 
-    runtime.registerBuffer(bufferA);
-    runtime.registerBuffer(bufferB);
+    state = Runtime.registerBuffer(state, bufferA);
+    state = Runtime.registerBuffer(state, bufferB);
 
-    runtime.dispatch(101);
-    runtime.dispatch(102);
+    state = Runtime.dispatch(state, 101).state;
+    state = Runtime.dispatch(state, 102).state;
 
-    const stack = runtime.getTraceStack();
+    const stack = state.traceStack;
     expect(stack.length).toBe(2);
     expect(stack[1].parentTraceId).toBe(stack[0].id);
     expect(stack[0].parentTraceId).toBeNull();
@@ -120,11 +120,11 @@ describe('MetaBufferRuntime - Phase 1', () => {
       }
     };
 
-    runtime.registerBuffer(buffer);
-    runtime.dispatch(4);
-    runtime.dispatch(4);
+    state = Runtime.registerBuffer(state, buffer);
+    state = Runtime.dispatch(state, 4).state;
+    state = Runtime.dispatch(state, 4).state;
 
-    expect(runtime.getContext().counter).toBe(2);
-    expect(runtime.getTraceStack().length).toBe(0);
+    expect(state.context.counter).toBe(2);
+    expect(state.traceStack.length).toBe(0);
   });
 });
