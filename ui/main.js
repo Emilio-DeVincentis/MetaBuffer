@@ -45,9 +45,29 @@ const btnAi = document.getElementById('btn-ai');
 const btnAiAccept = document.getElementById('btn-ai-accept');
 const btnAiReject = document.getElementById('btn-ai-reject');
 const btnSave = document.getElementById('btn-save');
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const btnExportTraces = document.getElementById('btn-export-traces');
 
 const aiSuggestionBar = document.getElementById('ai-suggestion-bar');
 const aiStatus = document.getElementById('ai-status');
+const aiSpinner = document.getElementById('ai-spinner');
+const analysisSpinner = document.getElementById('analysis-spinner');
+const runSpinner = document.getElementById('run-spinner');
+
+const helpModal = document.getElementById('help-modal');
+const btnCloseHelp = document.getElementById('btn-close-help');
+
+// --- USER-FRIENDLY ERROR MAPPING ---
+const errorMap = {
+    'BUFFER_NOT_FOUND': 'Requested buffer could not be located.',
+    'WRITE_CONFLICT': 'System conflict: multiple components tried to update the same data simultaneously.',
+    'BOOTSTRAP_FAILURE': 'Critical failure during system initialization.',
+    'DISPATCH_FAILURE': 'The requested action could not be processed safely.',
+    'RECONSTRUCTION_FAILURE': 'Time-travel failed: could not restore previous system state.',
+    'TRACE_NOT_FOUND': 'The requested point in time no longer exists in history.',
+    'ERR_CORE_BOOTSTRAP_MISSING': 'Invalid session file: boot record missing.',
+    'ERR_CORE_HYDRATION_FAILURE': 'Could not load session: data may be corrupted.'
+};
 
 // --- CODEMIRROR AI EXTENSION ---
 class GhostWidget extends WidgetType {
@@ -93,7 +113,7 @@ term.open(document.getElementById('output-terminal'));
 // --- SHELL EVENT LISTENERS ---
 
 window.addEventListener('shell-render', (e) => {
-    const { workspace, focusedId, diagnostics, inspector, terminal, traces, isPreview, aiSuggestion, isAiGenerating } = e.detail;
+    const { workspace, focusedId, diagnostics, inspector, terminal, runStatus, traces, isPreview, aiSuggestion, isAiGenerating } = e.detail;
 
     // 1. Ribbon Rendering
     renderRibbon(workspace, focusedId);
@@ -102,7 +122,7 @@ window.addEventListener('shell-render', (e) => {
     renderDiagnostics(diagnostics, inspector);
 
     // 3. Terminal (Passive Sync)
-    renderTerminal(terminal);
+    renderTerminal(terminal, runStatus);
 
     // 4. Traces
     renderTraces(traces);
@@ -114,14 +134,18 @@ window.addEventListener('shell-render', (e) => {
         notificationBanner.classList.add('hidden');
     }
 
-    // 5. AI Preview Sync
+    // 5. AI Preview Sync & Loading Indicators
     renderAiPreview(aiSuggestion, isAiGenerating, focusedId);
+
+    // Check loading states from trace/context implicitly or via flags
+    // (Analysis spinner is handled via explicit triggers for simplicity in MVP)
 });
 
 function renderAiPreview(suggestion, isGenerating, focusedId) {
     if (suggestion || isGenerating) {
         aiSuggestionBar.classList.remove('hidden');
         aiStatus.innerText = isGenerating ? "GhostWriter is thinking..." : "GhostWriter suggestion ready.";
+        aiSpinner.classList.toggle('hidden', !isGenerating);
 
         const view = editors.get(focusedId);
         if (view && suggestion) {
@@ -134,12 +158,14 @@ function renderAiPreview(suggestion, isGenerating, focusedId) {
 }
 
 window.addEventListener('shell-error', (e) => {
-    fatalBanner.innerText = e.detail;
+    const friendlyMsg = errorMap[e.detail] || e.detail;
+    fatalBanner.innerText = friendlyMsg;
     fatalBanner.classList.remove('hidden');
 });
 
 window.addEventListener('shell-notify', (e) => {
-    showNotification(e.detail);
+    const friendlyMsg = errorMap[e.detail] || e.detail;
+    showNotification(friendlyMsg);
 });
 
 // --- RENDERERS ---
@@ -203,11 +229,10 @@ function renderRibbon(workspace, focusedId) {
         }
     });
 
-    // Camera movement (Geometry Invariant)
+    // Camera movement
     const focusedIndex = workspace.findIndex(w => w.id === focusedId);
     if (focusedIndex !== -1) {
-        // Niri style: simple horizontal ribbon
-        const offset = focusedIndex * 400; // Fixed width columns (400px)
+        const offset = focusedIndex * 400;
         ribbon.style.transform = `translateX(-${offset}px)`;
     }
 }
@@ -233,26 +258,26 @@ function renderDiagnostics(diagnostics, inspector) {
 }
 
 let lastTerminalSnapshot = "";
-function renderTerminal(terminal) {
+function renderTerminal(terminal, runStatus) {
     const fullText = terminal.map(c => c.text || '').join('');
     if (fullText !== lastTerminalSnapshot) {
         term.clear();
         term.write(fullText);
         lastTerminalSnapshot = fullText;
     }
+
+    runSpinner.classList.toggle('hidden', runStatus !== 'RUNNING' && runStatus !== 'REQUESTED');
 }
 
 function renderTraces(traces) {
     traceContent.innerHTML = '';
 
-    // Build causality map
-    const childrenMap = new Map(); // parentId -> child[]
+    const childrenMap = new Map();
     const rootTraces = [];
 
     traces.forEach(t => {
-        if (t.parentTraceId === null) {
-            rootTraces.push(t);
-        } else {
+        if (t.parentTraceId === null) rootTraces.push(t);
+        else {
             if (!childrenMap.has(t.parentTraceId)) childrenMap.set(t.parentTraceId, []);
             childrenMap.get(t.parentTraceId).push(t);
         }
@@ -262,12 +287,29 @@ function renderTraces(traces) {
         const div = document.createElement('div');
         div.className = 'trace-item';
         div.style.marginLeft = `${depth * 15}px`;
-        div.innerHTML = `
+
+        const info = document.createElement('div');
+        info.className = 'trace-info';
+        info.innerHTML = `
             <span class="trace-id">#${trace.id}</span>
             <span class="trace-mb">MB:${trace.metaBufferId}</span>
             <span class="trace-scope">[${trace.scope.join(',')}]</span>
         `;
-        div.onclick = () => window.timeTravel(trace.id);
+        info.onclick = () => window.timeTravel(trace.id);
+
+        const actions = document.createElement('div');
+        actions.className = 'trace-actions';
+        const btnCopy = document.createElement('button');
+        btnCopy.innerText = 'Copy';
+        btnCopy.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(JSON.stringify(trace, null, 2));
+            showNotification('Trace copied to clipboard');
+        };
+        actions.appendChild(btnCopy);
+
+        div.appendChild(info);
+        div.appendChild(actions);
         traceContent.appendChild(div);
 
         const children = childrenMap.get(trace.id) || [];
@@ -281,15 +323,61 @@ window.timeTravel = (id) => shell.timeTravel(id);
 
 // --- INPUT HANDLERS ---
 
-btnAnalyze.onclick = () => shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_BUFFER', bufferId: 3 } });
-btnAnalyzePy.onclick = () => shell.triggerExternalAnalysis('python');
-btnAnalyzeJava.onclick = () => shell.triggerExternalAnalysis('java');
-btnRun.onclick = () => shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_RUN' } });
-btnKill.onclick = () => shell.handleEvent(1, { pending_command: { type: 'KILL_RUN' } });
+btnAnalyze.onclick = () => {
+    analysisSpinner.classList.remove('hidden');
+    shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_BUFFER', bufferId: 3 } })
+        .finally(() => analysisSpinner.classList.add('hidden'));
+};
+
+btnAnalyzePy.onclick = () => {
+    analysisSpinner.classList.remove('hidden');
+    shell.triggerExternalAnalysis('python')
+        .finally(() => analysisSpinner.classList.add('hidden'));
+};
+
+btnAnalyzeJava.onclick = () => {
+    analysisSpinner.classList.remove('hidden');
+    shell.triggerExternalAnalysis('java')
+        .finally(() => analysisSpinner.classList.add('hidden'));
+};
+
+btnRun.onclick = () => {
+    runSpinner.classList.remove('hidden');
+    shell.handleEvent(1, { pending_command: { type: 'ACTIVATE_RUN' } });
+};
+
+btnKill.onclick = () => {
+    shell.handleEvent(1, { pending_command: { type: 'KILL_RUN' } })
+        .finally(() => runSpinner.classList.add('hidden'));
+};
+
 btnAi.onclick = () => shell.requestAISuggestion();
 btnAiAccept.onclick = () => shell.commitAISuggestion();
 btnAiReject.onclick = () => shell.rejectAISuggestion();
-btnSave.onclick = () => shell.handleEvent(1, { type: 'COMMAND', action: 'SAVE' }); // Triggers structural sync
+btnSave.onclick = () => {
+    shell.handleEvent(1, { type: 'COMMAND', action: 'SAVE' });
+    showNotification('System state saved successfully');
+};
+
+btnThemeToggle.onclick = () => {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    showNotification(`Switched to ${next} mode`);
+};
+
+btnExportTraces.onclick = () => {
+    const traces = kernelState.traceStack;
+    const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `metabuffer-traces-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotification('History exported as JSON');
+};
 
 window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey)) {
@@ -300,9 +388,17 @@ window.addEventListener('keydown', (e) => {
         } else if (e.key === 'n') {
             e.preventDefault();
             shell.handleEvent(1, { pending_command: { type: 'CREATE_BUFFER', kind: 'editor' } });
+        } else if (e.key === 's') {
+            e.preventDefault();
+            btnSave.click();
+        } else if (e.key === '?' || e.key === '/') {
+            e.preventDefault();
+            helpModal.classList.toggle('hidden');
         }
     }
 });
+
+btnCloseHelp.onclick = () => helpModal.classList.add('hidden');
 
 function showNotification(msg) {
     notificationBanner.innerText = msg;

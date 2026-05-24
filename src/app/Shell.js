@@ -67,6 +67,7 @@ export function createShell(initialState, options = {}) {
                 diagnostics: projectDiagnostics(context),
                 inspector: projectInspector(context),
                 terminal: projectTerminal(context),
+                runStatus: context.run_status || 'IDLE',
                 traces: kernelState.traceStack,
                 isPreview: isPreviewing,
                 aiSuggestion: activeAISuggestion,
