@@ -53,7 +53,7 @@ export function projectDiagnostics(context) {
 /**
  * Project spatial inspector data.
  * @param {Readonly<Record<string, unknown>>} context
- * @returns {any}
+ * @returns {Record<string, unknown> | null}
  */
 export function projectInspector(context) {
     return context.inspector_state || null;
