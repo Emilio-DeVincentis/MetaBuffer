@@ -237,7 +237,8 @@ const validatePatch = (buffer, patch) => {
     /** @type {Record<string, unknown>} */
     const validPatch = {};
     if (patch) {
-        // Strict isolation: '*' wildcard is only allowed for the Root MetaBuffer (ID: 1)
+        // Strict isolation: '*' wildcard is restricted to the Root MetaBuffer (ID: 1)
+        // to prevent scope leakage from child buffers.
         const hasWildcard = buffer.scope.includes('*');
         const isRoot = buffer.id === 1;
 
@@ -256,11 +257,14 @@ const validatePatch = (buffer, patch) => {
 };
 
 /**
- * Internal helper to set context value, supporting dot-notation.
- * Returns a new context object.
- * @param {Record<string, unknown>} context
- * @param {string} key
- * @param {unknown} value
+ * Internal helper to set context value, supporting dot-notation for nested updates.
+ * For example, setContextValue(ctx, 'buffers.1.content', 'new') will immutably
+ * update context.buffers[1].content.
+ * Returns a new context object (shallow copies of path components).
+ *
+ * @param {Record<string, unknown>} context - The current system context.
+ * @param {string} key - The key (supports dot-notation).
+ * @param {unknown} value - The value to set.
  * @returns {Record<string, unknown>}
  */
 const setContextValue = (context, key, value) => {

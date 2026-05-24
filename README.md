@@ -117,7 +117,11 @@ Il sistema adotta il principio del **Default World**: la complessità riflessiva
  * @typedef {Object} Signal
  * @property {string} kind - Il tipo di segnale (es. 'REQUEST_ANALYSIS').
  * @property {number|null} [target] - ID del buffer di destinazione (null per broadcast).
- * @property {any} [payload] - Dati opzionali.
+ * @property {any} [payload] - Dati opzionali necessari per la reazione.
+ *
+ * I segnali permettono la coordinazione asincrona e deterministica tra MetaBuffer.
+ * Un buffer emette un segnale nel suo Delta; il Kernel lo distribuisce ai target
+ * nello stesso ciclo di dispatch, permettendo reazioni atomiche.
  */
 
 /** @typedef {{ patch: Record<string, any>, signals?: Signal[] }} ContextDelta */
