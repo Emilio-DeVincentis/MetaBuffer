@@ -1,4 +1,5 @@
 import * as Runtime from '../src/core/MetaBufferRuntime.js';
+import * as TraceRepo from '../src/core/TraceRepository.js';
 import { createShell } from '../src/app/Shell.js';
 import { rootBuffer } from '../src/buffers/root.js';
 import { editorBuffer } from '../src/buffers/editor.js';
@@ -280,16 +281,8 @@ function renderTerminal(terminal, runStatus) {
 function renderTraces(traces) {
     traceContent.innerHTML = '';
 
-    const childrenMap = new Map();
-    const rootTraces = [];
-
-    traces.forEach(t => {
-        if (t.parentTraceId === null) rootTraces.push(t);
-        else {
-            if (!childrenMap.has(t.parentTraceId)) childrenMap.set(t.parentTraceId, []);
-            childrenMap.get(t.parentTraceId).push(t);
-        }
-    });
+    const childrenMap = TraceRepo.groupByParent(traces);
+    const rootTraces = TraceRepo.getRootTraces(traces);
 
     const renderNode = (trace, depth = 0) => {
         const div = document.createElement('div');
