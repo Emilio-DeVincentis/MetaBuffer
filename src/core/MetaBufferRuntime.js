@@ -98,6 +98,11 @@ export const dispatch = (state, triggerBufferId) => {
         return failure('BUFFER_NOT_FOUND', `MetaBuffer with ID ${triggerBufferId} not found.`);
     }
 
+    // Genealogy Validation
+    if (triggerBuffer.parentId !== null && triggerBuffer.parentId !== undefined && !state.buffers.has(triggerBuffer.parentId)) {
+        return failure('GENEALOGY_VIOLATION', `Parent buffer ${triggerBuffer.parentId} not found for buffer ${triggerBufferId}`, triggerBufferId);
+    }
+
     try {
         // 1. Snapshot the initial state (frozen for safety)
         const snapshot = Object.freeze({ ...state.context });
@@ -208,6 +213,12 @@ export const dispatch = (state, triggerBufferId) => {
 const prepareViewState = (buffer, snapshot) => {
     /** @type {Record<string, unknown>} */
     const viewState = {};
+
+    // Special case: Root Buffer (ID: 1) with wildcard can see everything
+    if (buffer.id === 1 && buffer.scope.includes('*')) {
+        return Object.freeze({ ...snapshot });
+    }
+
     for (const key of buffer.scope) {
         if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
             viewState[key] = snapshot[key];
@@ -226,12 +237,18 @@ const validatePatch = (buffer, patch) => {
     /** @type {Record<string, unknown>} */
     const validPatch = {};
     if (patch) {
+        // Strict isolation: '*' wildcard is only allowed for the Root MetaBuffer (ID: 1)
+        const hasWildcard = buffer.scope.includes('*');
+        const isRoot = buffer.id === 1;
+
         for (const key in patch) {
             const baseKey = key.split('.')[0];
-            if (buffer.scope.includes(baseKey) || buffer.scope.includes('*')) {
+            const isAllowed = (isRoot && hasWildcard) || buffer.scope.includes(baseKey);
+
+            if (isAllowed) {
                 validPatch[key] = patch[key];
             } else {
-                console.warn(`MetaBuffer ${buffer.id} attempted to write out-of-scope key: ${key}`);
+                console.warn(`MetaBuffer ${buffer.id} (parentId: ${buffer.parentId}) attempted to write out-of-scope key: ${key}`);
             }
         }
     }

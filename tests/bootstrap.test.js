@@ -24,11 +24,14 @@ describe('MetaBufferRuntime - Bootstrap Validation', () => {
     const initRes = Runtime.initialize(state);
     state = initRes.state;
 
+    const rootBuffer = { id: 1, parentId: null, scope: ['*'], apply: () => ({ delta: { patch: {} }, trace: null }) };
+    state = Runtime.registerBuffer(state, rootBuffer);
+
     const buffer = {
       id: 2,
       parentId: 1,
       scope: [],
-      apply: () => ({ delta: null, trace: { id: 0, metaBufferId: 2, parentTraceId: null, scope: [] } })
+      apply: () => ({ delta: { patch: {} }, trace: {} })
     };
 
     state = Runtime.registerBuffer(state, buffer);
