@@ -1,52 +1,36 @@
-# Application Shell Architecture (Phase 6)
+# Application Bridge Architecture (Shell)
 
-The Shell (`src/app/Shell.js`) acts as the "Application Shell" or Host Bridge, providing an impure guscio (shell) around the pure MetaBuffer Kernel. In accordo con l'Invariante 3 del MetaBuffer System, lo Shell agisce come il confine (Impure Device) tra il kernel logico puro e il mondo esterno non deterministico.
+The Shell (`src/app/Shell.js`) is the orchestration layer between the deterministic State Engine (Kernel) and the Host Environment (NeutralinoJS/Browser).
 
-## 1. Rigid Execution Pipeline
-All interactions follow a strictly synchronous mirroring pattern:
-`Host Event` ➔ `dispatch()` ➔ `getRuntimeProjections()` ➔ `serialize()` ➔ `write (FS)` ➔ `render (UI)`.
+---
 
-- **Host Events**: UI clicks, typing, or Native Process signals.
-- **Dispatch**: The only way to mutate system state.
-- **Projections**: Pure functions (`src/core/projections.js`) that transform context into view-ready data.
-- **Serialize**: `exportState()` creates a deterministic blob.
-- **Write**: Atomic persistence using NeutralinoJS FS API.
-- **Render**: UI components (CodeMirror, xterm.js) update their view based on projections.
+## 1. Responsibilities
+1.  **Event Normalization:** Translates Native Host events (OS signals, UI input) into Kernel commands.
+2.  **State Lifecycle:** Manages Kernel initialization, persistence, and disaster recovery.
+3.  **IO Management:** Handles non-deterministic operations (File system access, child process execution, network calls).
+4.  **UI Projection:** Distributes the Kernel context to UI components (CodeMirror, xterm.js).
 
-## 2. Process Isolation & Spawning
-The Shell is exclusively responsible for the lifecycle of external processes (e.g., Node.js for code execution).
-- The Kernel is **blind** to these processes.
-- The Shell observes the `run_status` context key.
-- When `REQUESTED`, the Shell spawns the process and transitions state to `RUNNING`.
-- Process output is normalized by the Shell and injected into the Kernel via `dispatch()` as discrete `incoming_output_chunk` data.
+---
 
-## 3. Discrete Synchronization (Ephemeral Buffers)
-To keep the Kernel's Trace stack mathematically clean:
-- **Typing**: Stored in a local `ephemeralTextBuffers` Map within the Shell.
-- **Commit**: Typing is only dispatched to the Kernel on focus change or explicit commands (Analyze/Run).
-- This ensures that every Trace represents a meaningful structural or logical step, not every keystroke.
+## 2. Data Flow (Mirror Cycle)
+The system follows a strict unidirectional data flow:
+`Host Event` ➔ `Shell.handleEvent()` ➔ `Kernel.dispatch()` ➔ `Shell.sync()` ➔ `UI.render()`.
 
-## 4. Atomic Persistence & Disaster Recovery
-Persistence supports two primary modes:
-- **FileSystem (FS)**: Uses the **Write-Temp + Move (Rename)** pattern to prevent corruption.
-- **IndexedDB (IDB)**: Used as the primary alternative in browser-only environments.
+### 2.1 Side-Effect Handling
+Asynchronous operations (e.g., executing code or requesting AI results) occur in the Shell:
+1.  Kernel sets a `REQUESTED` flag in the context.
+2.  Shell detects the flag and initiates the external process.
+3.  Upon completion, Shell dispatches a new command to the Kernel to consolidate the result.
 
-**Disaster Recovery Policy**: If a session blob is corrupted (checksum mismatch), the Shell attempts a "best-effort" salvage. If recovery is impossible, it resets to a clean, minimal valid state to preserve system availability.
+### 2.2 Persistence Layer
+*   **Atomic Write:** Uses a "write-temp + move" pattern on the File System to prevent data corruption.
+*   **Checksum Validation:** Verifies session integrity during hydration.
+*   **Storage Drivers:** Supports both File System (Native) and IndexedDB (Web) backends.
 
-## 5. External Language Extensions (Plugins)
-Advanced analysis (Python, Java) lives strictly **outside the Core**.
-- The Shell handles the asynchronous dialogue with external tools (or mock LSPs).
-- Results are normalized and injected into the Kernel via discrete, user-triggered events.
-- This prevents "Trace flooding" and keeps the Kernel mathematically pure.
+---
 
-## 6. UI Components as Passive Projections
-- **CodeMirror 6**: Mirroring the active MetaBuffer's text.
-- **xterm.js**: Passive view of `runtime_output`. No direct piping; it simply renders the string array projected from the current state.
-- **Niri Ribbon**: Horizontal tiling that shifts focus by translating the ribbon container.
-
-## 7. Agentic Boundary Layer (AI)
-The AI component is strictly isolated from the Kernel:
-- **MockAIAgent**: Simulates non-deterministic token generation with variable latency.
-- **Volatile Preview**: Suggestions are stored in the Shell's memory and rendered as CodeMirror decorations (ghost text).
-- **Linear Commit**: Suggestions only enter the Kernel's Trace stack when explicitly accepted via `COMMIT_SUGGESTION`.
-- **Causal Audit**: Every AI-driven mutation includes metadata (agent name, confidence, strategy) for historical auditing, preserving the system's "Scetticismo Logico".
+## 3. UI Integration (Passive Projection)
+UI components are stateless views of the Kernel context.
+*   **Text Editing:** Ephemeral keystrokes are buffered in the Shell and committed to the Kernel only on specific triggers (focus change, save command).
+*   **Terminal:** Direct rendering of the `runtime_output` array projected from the state.
+*   **Layout:** Determined by the `active_buffers` and `focus_stack` keys in the context.

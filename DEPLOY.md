@@ -1,6 +1,6 @@
-# MetaBuffer System — Deployment & Development Guide (DEPLOY.md)
+# MetaBuffer State Engine — Deployment & Development Guide (DEPLOY.md)
 
-This document provides instructions for setting up the development environment, building the application, and deploying the MetaBuffer System.
+This document provides instructions for setting up the development environment, building the application, and deploying the MetaBuffer State Engine.
 
 ## 1. Prerequisites
 To work on this project, you need:
@@ -54,7 +54,7 @@ The MetaBuffer System is configured via code and JSON files.
 - `clientLibrary`: Location of the `neutralino.js` client library.
 
 ### Kernel Parameters (in `src/core/MetaBufferRuntime.js`)
-- `snapshotInterval`: Frequency of structural snapshots (default: 50). Decreasing this improves Time-Travel speed but increases memory usage.
+- `snapshotInterval`: Frequency of structural snapshots (default: 50). Decreasing this improves state reconstruction speed but increases memory usage.
 
 ### Shell Storage Mode (in `src/app/Shell.js`)
 - The Shell automatically detects the environment:

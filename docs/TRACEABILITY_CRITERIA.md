@@ -1,64 +1,39 @@
-# Traceability Criteria
+# Audit Log Policy (Event Recording)
 
-In MetaBuffer System, a `Trace` represents a **structural shift in control causality**. It is not a log of state changes, but a record of why and how the system's control flow moved.
+This document defines the engineering rules for recording state transitions in the Audit Log (Trace Stack).
 
-## Trace vs. Null
+## 1. Recording Criteria
 
-The decision to emit a trace is governed by the distinction between the **Default World** (ephemeral changes) and a **Broken Illusion** (structural changes).
+### 1.1 Structural Transitions (Must Record)
+An `AuditRecord` must be generated when a transition affects the system's execution structure or control flow:
+*   **Focus Management:** Moving the active focus between plugins.
+*   **Plugin Lifecycle:** Registration, activation, or removal of a logic unit.
+*   **Async Handover:** Transitioning a service status to `REQUESTED` (e.g., initiating a build or AI task).
+*   **Data Commitment:** Formal acceptance of external/async results into the context.
 
-### 1. Emit `trace: {}` (Structural Change)
-You must emit a Trace when the operation affects the system's control structure:
-
-*   **Focus Changes**: Moving the user's attention from one buffer to another.
-*   **Lifecycle Events**: Creating, activating, or destroying MetaBuffers.
-*   **Agent Takeover**: When an external entity (AI, External Process) assumes control of the system status (e.g., transitioning `agent_status` to `REQUESTED`).
-*   **System Mode Shifts**: Switching between `DEFAULT` and `REFLEXIVE` modes.
-*   **Formal Commitment**: When non-deterministic data is formally "accepted" into the system context (e.g., `COMMIT_SUGGESTION`).
-
-### 2. Return `trace: null` (Content Mutation)
-Return `null` for operations that occur within the established control context:
-
-*   **Keystrokes / Text Editing**: Typing and local text modifications.
-*   **Streaming Output**: Incremental updates from a running process (until it exits).
-*   **Automatic Analysis**: Background diagnostic updates that don't shift focus or control.
-*   **Ephemeral Metadata**: Updates to UI-only state that doesn't affect system causality.
+### 1.2 Operational Mutations (Do Not Record)
+Transitions that are high-frequency or do not affect control flow should return `audit: null`:
+*   **Buffered Text Input:** Character-by-character typing.
+*   **Streaming Data:** Individual chunks of stdout/stderr from a running process.
+*   **Background Tasks:** Periodic diagnostic updates or polling results that don't trigger state changes.
 
 ---
 
-## Examples
-
-### Structural: Creating a Buffer
+## 2. Technical Implementation
+In the `apply()` function of a plugin:
 ```javascript
-// Inside rootBuffer handler
-CREATE_BUFFER: (state, payload) => ({
-    patch: { /* ... */ },
-    trace: {} // Essential: tracks the creation of a new entity
-})
+// Structural change
+return {
+  delta: { patch: { focused_id: 10 } },
+  audit: { metadata: { type: 'FOCUS_SHIFT' } }
+};
+
+// Content change
+return {
+  delta: { patch: { content: '...' } },
+  audit: null
+};
 ```
 
-### Ephemeral: Text Input
-```javascript
-// Inside editorBuffer
-apply: (view) => {
-    if (view.state.incoming_input) {
-        return {
-            delta: { patch: { content: view.state.content + view.state.incoming_input } },
-            trace: null // Ephemeral: text editing is "Default World"
-        };
-    }
-}
-```
-
-### Structural: Agent Activation
-```javascript
-// Inside agentBuffer
-ACTIVATE: () => ({
-    patch: { agent_status: 'REQUESTED' },
-    trace: {} // Essential: tracks the transition of control to an agent
-})
-```
-
-## Guiding Rule
-> "If the user performs a Time-Travel operation, would they expect to land exactly on this state change to understand the history of their actions?"
-
-If yes, emit a Trace. If it's a transient step towards a goal, return `null`.
+## 3. Rationale
+The Audit Log is optimized for **Deterministic Time-Travel**. By excluding high-frequency content updates, the log size remains $O(\text{control depth})$, ensuring sub-millisecond state reconstruction regardless of the amount of text edited.
