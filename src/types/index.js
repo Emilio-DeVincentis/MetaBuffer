@@ -7,6 +7,12 @@
  * @property {number|null} parentTraceId - ID of the preceding trace in the control stack.
  * @property {string[]} scope - The scope declared by the MetaBuffer at the time of trace emission.
  * @property {ContextDelta|null} [delta] - The state change associated with this trace (for reconstruction).
+ * @property {Record<string, unknown>} [metadata] - Optional metadata for the trace.
+ */
+
+/**
+ * @typedef {Object} TraceIntent
+ * @property {Record<string, unknown>} [metadata] - Optional metadata to include in the resulting trace.
  */
 
 /**
@@ -33,7 +39,7 @@
  * @property {number} id - Unique identifier for the MetaBuffer.
  * @property {number|null} parentId - ID of the parent MetaBuffer (genealogical reference).
  * @property {string[]} scope - Array of context keys this MetaBuffer is allowed to access.
- * @property {(view: ContextView) => { delta: ContextDelta, trace: Trace|null }} apply -
+ * @property {(view: ContextView) => { delta: ContextDelta, trace: TraceIntent|null }} apply -
  *           The transition function. Pure logic that returns a delta and optionally a trace.
  */
 

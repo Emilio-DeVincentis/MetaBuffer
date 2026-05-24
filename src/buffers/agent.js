@@ -8,7 +8,7 @@ const handlers = {
     ACTIVATE: () => ({
         patch: { agent_status: 'REQUESTED', agent_command: null },
         signals: [{ kind: 'AGENT_REQUESTED' }],
-        trace: { id: 0, metaBufferId: 4, parentTraceId: null, scope: [] }
+        trace: {}
     })
 };
 

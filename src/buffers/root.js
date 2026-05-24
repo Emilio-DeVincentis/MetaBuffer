@@ -25,7 +25,7 @@ const createFocusPatch = (state, targetId) => {
 const handlers = {
     FOCUS_BUFFER: (state, payload) => ({
         patch: createFocusPatch(state, payload.bufferId),
-        trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+        trace: {}
     }),
     FOCUS_NEXT: (state) => {
         const activeBuffers = state.active_buffers || [];
@@ -34,7 +34,7 @@ const handlers = {
         const targetId = activeBuffers[nextIndex];
         return {
             patch: createFocusPatch(state, targetId),
-            trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+            trace: {}
         };
     },
     FOCUS_PREV: (state) => {
@@ -44,7 +44,7 @@ const handlers = {
         const targetId = activeBuffers[nextIndex];
         return {
             patch: createFocusPatch(state, targetId),
-            trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+            trace: {}
         };
     },
     CREATE_BUFFER: (state, payload) => {
@@ -72,7 +72,7 @@ const handlers = {
                 focus_stack: focusStack,
                 active_buffers: activeBuffers
             },
-            trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+            trace: {}
         };
     },
     ACTIVATE_BUFFER: (state, payload) => {
@@ -89,24 +89,32 @@ const handlers = {
 
         return {
             patch,
-            trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+            trace: {}
         };
     },
     ACTIVATE_AGENT: () => ({
         patch: { agent_command: 'ACTIVATE' },
-        trace: null
+        trace: {} // ACTIVATE_AGENT is structural (taking control)
     }),
     CANCEL_AGENT: () => ({
         patch: { agent_status: 'IDLE', agent_command: null },
-        trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+        trace: {}
     }),
     ACTIVATE_RUN: () => ({
         patch: { run_command: 'ACTIVATE' },
-        trace: null
+        trace: {} // ACTIVATE_RUN is structural
     }),
     KILL_RUN: () => ({
         patch: { run_status: 'IDLE', run_command: 'KILL' },
-        trace: { id: 0, metaBufferId: 1, parentTraceId: null, scope: [] }
+        trace: {}
+    }),
+    BREAK_ILLUSION: () => ({
+        patch: { system_mode: 'REFLEXIVE' },
+        trace: { metadata: { type: 'BREAK_ILLUSION' } }
+    }),
+    RESTORE_ILLUSION: () => ({
+        patch: { system_mode: 'DEFAULT' },
+        trace: { metadata: { type: 'RESTORE_ILLUSION' } }
     }),
     COMMIT_SUGGESTION: (state, payload) => {
         const targetId = payload.bufferId;
@@ -119,11 +127,6 @@ const handlers = {
             return {
                 patch: { buffers },
                 trace: {
-                    id: 0,
-                    metaBufferId: 1,
-                    parentTraceId: null,
-                    scope: ['buffers'],
-                    // @ts-ignore
                     metadata: payload.metadata
                 }
             };
@@ -147,7 +150,8 @@ export const rootBuffer = {
         'agent_command',
         'run_status',
         'run_command',
-        'next_buffer_id'
+        'next_buffer_id',
+        'system_mode'
     ],
     apply: (view) => {
         let patch = {};

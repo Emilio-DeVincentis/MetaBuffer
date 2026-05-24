@@ -289,7 +289,8 @@ export function createShell(initialState, options = {}) {
                         runtime_output: [],
                         agent_status: 'IDLE',
                         run_status: 'IDLE',
-                        next_buffer_id: 10
+                        next_buffer_id: 10,
+                        system_mode: 'DEFAULT'
                     });
                 }
             } catch (e) {

@@ -10,7 +10,7 @@ const handlers = {
             runtime_output: []
         },
         signals: [{ kind: 'EXECUTION_STARTED', target: null, payload: state.js_source_code }],
-        trace: { id: 0, metaBufferId: 5, parentTraceId: null, scope: [] }
+        trace: {}
     })
 };
 

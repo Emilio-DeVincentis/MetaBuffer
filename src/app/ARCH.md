@@ -1,6 +1,6 @@
 # Application Shell Architecture (Phase 6)
 
-The Shell (`src/app/Shell.js`) acts as the "Application Shell" or Host Bridge, providing an impure guscio (shell) around the pure MetaBuffer Kernel.
+The Shell (`src/app/Shell.js`) acts as the "Application Shell" or Host Bridge, providing an impure guscio (shell) around the pure MetaBuffer Kernel. In accordo con l'Invariante 3 del MetaBuffer System, lo Shell agisce come il confine (Impure Device) tra il kernel logico puro e il mondo esterno non deterministico.
 
 ## 1. Rigid Execution Pipeline
 All interactions follow a strictly synchronous mirroring pattern:

@@ -17,8 +17,20 @@ Il `MetaBuffer` è l'**unica entità primitiva** del sistema. Ruoli percepiti co
 ### 1.2 Il Trace
 Il `Trace` è la **memoria strutturata del controllo**.
 *   **Esclusioni:** NON è un log di eventi UI, NON è un undo log del testo.
-*   **Inclusioni:** Registra esclusivamente i cambi strutturali di controllo (chi assume il focus, da quale origine, con quale scope).
+*   **Inclusioni:** Registra esclusivamente i cambi strutturali di controllo.
+    *   **Cambi di Focus:** Spostamento dell'attenzione tra MetaBuffer.
+    *   **Ciclo di Vita dei Buffer:** Creazione, attivazione o distruzione di MetaBuffer.
+    *   **Passaggio di Controllo ad Agenti/Esecutori:** Quando un'entità esterna assume il controllo del flusso (es. `ACTIVATE_AGENT`, `ACTIVATE_RUN`).
+    *   **Riflessione di Sistema:** Transizioni tra `Default World` e `Broken Illusion`.
+    *   **Consolidamento Esterno:** Quando un risultato esterno viene commesso formalmente nel contesto (es. `COMMIT_SUGGESTION`).
 *   **Proprietà:** Append-only e Stack-like. La dimensione in memoria è $O(\text{profondità del controllo})$, indipendente dal tempo o dal numero di modifiche al testo.
+*   **Politica di Crescita:** In questa implementazione, lo stack dei Trace è illimitato per garantire la ricostruibilità totale. Sistemi di produzione possono implementare politiche di "Trace Pruning" o "Snapshot Consolidation" per limitare la crescita orizzontale.
+
+### 1.3 Snapshot e Ricostruzione
+Il sistema supporta la ricostruzione deterministica dello stato tramite snapshot periodici.
+*   **Snapshot:** Ogni $N$ Trace strutturali (default: 50), il Kernel cattura uno snapshot immutabile del contesto.
+*   **Ricostruzione:** Lo stato a qualsiasi ID di Trace può essere ricostruito applicando i delta dei Trace successivi allo snapshot più vicino.
+*   **Time-Travel:** Il sistema permette il rollback atomico a qualsiasi punto della storia del controllo.
 
 ---
 
@@ -78,8 +90,37 @@ Il sistema adotta il principio del **Default World**: la complessità riflessiva
 ```javascript
 // @ts-check
 
-/** @typedef {{ id: number, metaBufferId: number, parentTraceId: number|null, scope: string[] }} Trace */
-/** @typedef {{ patch: Record<string, any> }} ContextDelta */
+/** @typedef {{ id: number, metaBufferId: number, parentTraceId: number|null, scope: string[], delta: ContextDelta|null }} Trace */
+
+/**
+ * @example Esempio di implementazione di un MetaBuffer
+ *
+ * export const myBuffer = {
+ *   id: 10,
+ *   parentId: 1,
+ *   scope: ['text_key', 'status_key'],
+ *   apply: (view) => {
+ *     const patch = {};
+ *     if (view.state.text_key === 'hello') {
+ *       patch.status_key = 'ready';
+ *       return {
+ *         delta: { patch, signals: [{ kind: 'READY_SIGNAL' }] },
+ *         trace: { metadata: { reason: 'input-match' } }
+ *       };
+ *     }
+ *     return { delta: { patch: {} }, trace: null };
+ *   }
+ * };
+ */
+
+/**
+ * @typedef {Object} Signal
+ * @property {string} kind - Il tipo di segnale (es. 'REQUEST_ANALYSIS').
+ * @property {number|null} [target] - ID del buffer di destinazione (null per broadcast).
+ * @property {any} [payload] - Dati opzionali.
+ */
+
+/** @typedef {{ patch: Record<string, any>, signals?: Signal[] }} ContextDelta */
 /** @typedef {{ state: Readonly<Record<string, any>> }} ContextView */
 
 /**
