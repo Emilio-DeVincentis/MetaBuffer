@@ -8,6 +8,7 @@ import { executorBuffer } from '../src/buffers/executor.js';
 import { spatialInspectorBuffer } from '../src/buffers/inspector.js';
 import { transformerBuffer } from '../src/buffers/transformer.js';
 import { outputBuffer } from '../src/buffers/output.js';
+import { config } from './config.js';
 
 // --- EXTERNAL LIBS (ESM CDN) ---
 import { EditorView, basicSetup, Decoration, WidgetType } from "https://esm.sh/@codemirror/view";
@@ -26,6 +27,13 @@ kernelState = Runtime.registerBuffer(kernelState, executorBuffer);
 kernelState = Runtime.registerBuffer(kernelState, spatialInspectorBuffer);
 kernelState = Runtime.registerBuffer(kernelState, transformerBuffer);
 kernelState = Runtime.registerBuffer(kernelState, outputBuffer);
+
+// Load external buffers from config
+if (config && Array.isArray(config.externalBuffers)) {
+    config.externalBuffers.forEach(buffer => {
+        kernelState = Runtime.registerBuffer(kernelState, buffer);
+    });
+}
 
 const shell = createShell(kernelState);
 
