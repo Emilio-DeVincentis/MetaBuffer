@@ -2,7 +2,7 @@
 
 import { exportState, hydrateState } from '../core/serialization.js';
 import { dispatch, setContext, reconstructState, rollback, initialize } from '../core/MetaBufferRuntime.js';
-import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal } from '../core/projections.js';
+import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal, projectInspector } from '../core/projections.js';
 import { pythonAnalyzer } from './presets/python.js';
 import { javaAnalyzer } from './presets/java.js';
 import { mockAIAgent } from './presets/ai.js';
@@ -65,7 +65,9 @@ export function createShell(initialState, options = {}) {
                 workspace: projectWorkspace(context),
                 focusedId: context.focused_buffer_id,
                 diagnostics: projectDiagnostics(context),
+                inspector: projectInspector(context),
                 terminal: projectTerminal(context),
+                runStatus: context.run_status || 'IDLE',
                 traces: kernelState.traceStack,
                 isPreview: isPreviewing,
                 aiSuggestion: activeAISuggestion,
@@ -75,7 +77,7 @@ export function createShell(initialState, options = {}) {
     };
 
     const fileExists = async (path) => {
-        const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+        const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
         if (!NL) return false;
         try {
             const stats = await NL.filesystem.getStats(path);
@@ -94,7 +96,7 @@ export function createShell(initialState, options = {}) {
         const wrappedBlob = JSON.stringify(wrapper, null, 2);
 
         if (storageMode === 'fs') {
-            const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
             if (!NL) return;
             try {
                 await NL.filesystem.writeFile(tempFile, wrappedBlob);
@@ -129,7 +131,7 @@ export function createShell(initialState, options = {}) {
         // Process Management (Side effects)
         const context = kernelState.context;
         if (context.run_status === 'REQUESTED' && !currentProcess) {
-            const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
             if (!NL) {
                 // Mock execution
                 await handleEvent(8, { run_status: 'RUNNING' });
@@ -226,7 +228,7 @@ export function createShell(initialState, options = {}) {
 
     const shell = {
         boot: async () => {
-            const NL = typeof window !== 'undefined' ? /** @type {any} */ (window).Neutralino : null;
+            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
             if (!NL && typeof indexedDB !== 'undefined') {
                 storageMode = 'idb';
             }
@@ -235,11 +237,11 @@ export function createShell(initialState, options = {}) {
                 await new Promise((resolve, reject) => {
                     const request = indexedDB.open('MetaBufferDB', 1);
                     request.onupgradeneeded = (e) => {
-                        const db = /** @type {any} */ (e.target).result;
+                        const db = /** @type {Record<string, unknown>} */ (e.target).result;
                         db.createObjectStore('sessions');
                     };
                     request.onsuccess = (e) => {
-                        db = /** @type {any} */ (e.target).result;
+                        db = /** @type {Record<string, unknown>} */ (e.target).result;
                         resolve();
                     };
                     request.onerror = reject;

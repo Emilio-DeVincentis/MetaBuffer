@@ -1,5 +1,5 @@
 // @ts-check
-import { MetaBufferRuntime } from '../src/core/MetaBufferRuntime.js';
+import * as Runtime from '../src/core/MetaBufferRuntime.js';
 
 /**
  * MetaBuffer System - Phase 7 Stress Benchmark
@@ -9,15 +9,15 @@ async function runBenchmark() {
   console.log('Target: 100,000 Structural Dispatches');
 
   const snapshotInterval = 100;
-  const runtime = new MetaBufferRuntime({ snapshotInterval });
-  runtime.initialize();
+  let state = Runtime.createInitialState({ snapshotInterval });
+  state = Runtime.initialize(state).state;
 
   const numBuffers = 100;
   const numDispatches = 100000;
 
   // 1. Register buffer pool
   for (let i = 2; i <= numBuffers + 1; i++) {
-    runtime.registerBuffer({
+    state = Runtime.registerBuffer(state, {
       id: i,
       // Each buffer has its own private key to avoid Root/Global conflicts
       scope: [`buffer_${i}_state`],
@@ -43,12 +43,14 @@ async function runBenchmark() {
   // 2. Heavy dispatch load
   for (let i = 1; i <= numDispatches; i++) {
     const bufferId = (i % numBuffers) + 2;
-    const result = runtime.dispatch(bufferId);
+    const result = Runtime.dispatch(state, bufferId);
 
     if (!result.ok) {
         console.error(`Dispatch failed at ${i}:`, result.error);
         process.exit(1);
     }
+
+    state = result.state;
 
     if (i % 20000 === 0) {
         const lapTime = Date.now() - startTime;
@@ -66,13 +68,13 @@ async function runBenchmark() {
   console.log(`Memory Usage (Start): ${(startMemory / 1024 / 1024).toFixed(2)} MB`);
   console.log(`Memory Usage (End): ${(endMemory / 1024 / 1024).toFixed(2)} MB`);
   console.log(`Memory Growth: ${((endMemory - startMemory) / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`Trace Stack Size: ${runtime.getTraceStack().length}`);
-  console.log(`Snapshots Stored: ${runtime.exportSnapshots().size}`);
+  console.log(`Trace Stack Size: ${state.traceStack.length}`);
+  console.log(`Snapshots Stored: ${state.snapshots.size}`);
 
   // 3. Performance of Reconstruction at scale
   const recStartTime = Date.now();
   const targetId = Math.floor(numDispatches / 2);
-  const recResult = runtime.reconstructState(targetId);
+  const recResult = Runtime.reconstructState(state, targetId);
   const recEndTime = Date.now();
 
   console.log(`\nReconstruction of Trace ${targetId} took: ${recEndTime - recStartTime}ms`);

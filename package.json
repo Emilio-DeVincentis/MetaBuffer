@@ -4,6 +4,9 @@
   "description": "MetaBuffer System - Core Specifications Implementation",
   "type": "module",
   "scripts": {
+    "dev": "neu run",
+    "dev:web": "npx serve .",
+    "build:neutralino": "neu build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

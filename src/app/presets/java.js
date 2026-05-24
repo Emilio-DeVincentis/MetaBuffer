@@ -6,18 +6,63 @@
  */
 export const javaAnalyzer = {
     id: 102,
-    name: 'java-analyzer',
+    name: 'Java-LSP-Minimal',
     /**
      * @param {string} code
+     * @returns {string[]}
      */
     analyze: (code) => {
         const diagnostics = [];
-        if (code.includes('class ') && !code.includes('public class')) {
-            diagnostics.push('Top-level class should usually be public.');
+        const lines = code.split('\n');
+
+        let braceCount = 0;
+        let inClass = false;
+
+        lines.forEach((line, index) => {
+            const trimmed = line.trim();
+            if (trimmed.length === 0) return;
+
+            // 1. Class/Method syntax check
+            if (trimmed.includes('class ')) {
+                inClass = true;
+                if (!trimmed.includes('public') && !trimmed.includes('private') && !trimmed.includes('protected')) {
+                    // Note: package-private is valid but often discouraged for top-level in teaching
+                }
+                if (!trimmed.endsWith('{') && !lines[index + 1]?.trim().startsWith('{')) {
+                    diagnostics.push(`Line ${index + 1}: Class definition should be followed by an opening brace.`);
+                }
+            }
+
+            if (trimmed.includes('void ') || trimmed.includes('int ') || trimmed.includes('String ')) {
+                if (trimmed.includes('(') && !trimmed.endsWith(';') && !trimmed.endsWith('{') && !lines[index + 1]?.trim().startsWith('{')) {
+                    diagnostics.push(`Line ${index + 1}: Method definition or statement seems incomplete.`);
+                }
+            }
+
+            // 2. Missing semicolon check
+            if (trimmed.length > 0 &&
+                !trimmed.endsWith('{') &&
+                !trimmed.endsWith('}') &&
+                !trimmed.endsWith(';') &&
+                !trimmed.startsWith('/') &&
+                !trimmed.startsWith('*') &&
+                !trimmed.startsWith('@')) {
+
+                // Exclude class/method headers
+                if (!trimmed.includes('class ') && !trimmed.includes('public ') && !trimmed.includes('static ')) {
+                    diagnostics.push(`Line ${index + 1}: Potential missing semicolon.`);
+                }
+            }
+
+            // Brace tracking
+            if (trimmed.includes('{')) braceCount++;
+            if (trimmed.includes('}')) braceCount--;
+        });
+
+        if (braceCount !== 0) {
+            diagnostics.push('File has unbalanced braces.');
         }
-        if (code.includes('System.out.print') && !code.endsWith(';')) {
-            diagnostics.push('Missing semicolon after statement.');
-        }
+
         return diagnostics;
     }
 };

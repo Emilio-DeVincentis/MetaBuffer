@@ -22,7 +22,7 @@ export function projectCode(context) {
 /**
  * Projects all workspace buffers.
  * @param {Readonly<Record<string, unknown>>} context
- * @returns {any[]}
+ * @returns {import('../types/index.js').MetaBuffer[]}
  */
 export function projectWorkspace(context) {
     if (!context.buffers) return [];
@@ -48,6 +48,15 @@ export function projectTerminal(context) {
  */
 export function projectDiagnostics(context) {
   return context.diagnostics || {};
+}
+
+/**
+ * Project spatial inspector data.
+ * @param {Readonly<Record<string, unknown>>} context
+ * @returns {Record<string, unknown> | null}
+ */
+export function projectInspector(context) {
+    return context.inspector_state || null;
 }
 
 /**

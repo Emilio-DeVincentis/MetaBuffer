@@ -12,7 +12,7 @@
  * @property {string} [kind]
  * @property {string} [initialContent]
  * @property {string} [content]
- * @property {any} [metadata]
+ * @property {Record<string, unknown>} [metadata]
  */
 
 const createFocusPatch = (state, targetId) => {

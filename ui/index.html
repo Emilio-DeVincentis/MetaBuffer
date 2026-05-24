@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +13,7 @@
         <header>
             <h1>MetaBuffer System</h1>
             <div class="toolbar">
+                <button id="btn-theme-toggle">Theme</button>
                 <button id="btn-analyze">Analyze</button>
                 <button id="btn-analyze-py">Py-LSP</button>
                 <button id="btn-analyze-java">Java-LSP</button>
@@ -28,20 +29,24 @@
             </div>
             <div id="side-panels">
                 <div id="diagnostics-panel" class="panel">
-                    <h3>Diagnostics</h3>
+                    <h3>Diagnostics <span id="analysis-spinner" class="spinner hidden"></span></h3>
                     <div id="diagnostics-content"></div>
                 </div>
                 <div id="output-panel" class="panel">
-                    <h3>Runtime Output</h3>
+                    <h3>Runtime Output <span id="run-spinner" class="spinner hidden"></span></h3>
                     <div id="output-terminal"></div>
                 </div>
                 <div id="trace-panel" class="panel">
-                    <h3>Trace Viewer</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3>Trace Viewer</h3>
+                        <button id="btn-export-traces" style="font-size: 0.7rem; padding: 2px 5px;">Export JSON</button>
+                    </div>
                     <div id="trace-content"></div>
                 </div>
             </div>
         </main>
         <div id="ai-suggestion-bar" class="hidden">
+            <span id="ai-spinner" class="spinner"></span>
             <span id="ai-status">GhostWriter is thinking...</span>
             <div class="ai-actions">
                 <button id="btn-ai-accept">Accept</button>
@@ -49,6 +54,21 @@
             </div>
         </div>
         <div id="notification-banner" class="hidden"></div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Keyboard Shortcuts</h2>
+            <ul>
+                <li><kbd>Ctrl</kbd> + <kbd>?</kbd> : Toggle this help menu</li>
+                <li><kbd>Ctrl</kbd> + <kbd>ArrowRight</kbd> : Focus next buffer</li>
+                <li><kbd>Ctrl</kbd> + <kbd>ArrowLeft</kbd> : Focus previous buffer</li>
+                <li><kbd>Ctrl</kbd> + <kbd>n</kbd> : Create new editor buffer</li>
+                <li><kbd>Ctrl</kbd> + <kbd>s</kbd> : Save system state</li>
+            </ul>
+            <button id="btn-close-help" style="margin-top: 20px; width: 100%; padding: 10px;">Close</button>
+        </div>
     </div>
 
     <div id="fatal-banner" class="hidden"></div>
