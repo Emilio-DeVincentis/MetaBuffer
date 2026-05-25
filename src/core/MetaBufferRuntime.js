@@ -60,6 +60,7 @@ export const setContext = (state, initialContext) => ({
 
 /**
  * Initializes the system and emits the mandatory BOOTSTRAP Trace.
+ * The BOOTSTRAP trace captures the initial state of the context.
  * @param {KernelState} state
  * @returns {ExecutionResult & { state?: KernelState }}
  */
@@ -71,7 +72,7 @@ export const initialize = (state) => {
             metaBufferId: 1, // Root MetaBuffer ID
             parentTraceId: null,
             scope: ['*'],
-            delta: null
+            delta: { patch: { ...state.context } }
         });
 
         const newState = {
@@ -205,7 +206,7 @@ export const dispatch = (state, triggerBufferId) => {
 };
 
 /**
- * Helper to prepare isolated view state.
+ * Helper to prepare isolated view state based on MetaBuffer scope.
  * @param {MetaBuffer} buffer
  * @param {Record<string, unknown>} snapshot
  * @returns {Readonly<Record<string, unknown>>}
@@ -214,7 +215,9 @@ const prepareViewState = (buffer, snapshot) => {
     /** @type {Record<string, unknown>} */
     const viewState = {};
 
-    // Special case: Root Buffer (ID: 1) with wildcard can see everything
+    // Root/Wildcard Bypass: The Root MetaBuffer (ID: 1) with the '*' scope
+    // is granted full visibility of the context snapshot to perform
+    // global coordination and system-wide state inspections.
     if (buffer.id === 1 && buffer.scope.includes('*')) {
         return Object.freeze({ ...snapshot });
     }

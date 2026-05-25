@@ -1,6 +1,6 @@
-# MetaBuffer System — Performance Report (PERF.md)
+# MetaBuffer State Engine — Performance Report (PERF.md)
 
-This document outlines the performance characteristics of the hardened MetaBuffer System as measured on the current environment.
+This document outlines the performance characteristics of the MetaBuffer State Engine.
 
 ## 🎯 Target Thresholds
 
@@ -13,9 +13,9 @@ This document outlines the performance characteristics of the hardened MetaBuffe
 
 ## 🔍 Detailed Analysis
 
-### 1. Time-Travel & Reconstruction
-The Kernel implements an O(1) state reconstruction strategy relative to total system time by leveraging structural snapshots taken every `snapshotInterval` (default 50) structural traces.
-Reconstruction from trace #1500 in a stack of 2000 traces was measured at **0.36ms**, significantly below the 100ms budget.
+### 1. State Reconstruction
+The Kernel implements an O(1) state reconstruction strategy by leveraging structural snapshots taken every `snapshotInterval` (default 50).
+Reconstruction from offset #1500 in a stack of 2000 audit records was measured at **0.36ms**, significantly below the 100ms budget.
 
 ### 2. Rendering & Edit Responsiveness
 Simulated typing into a responde MetaBuffer (which performs analysis on each character) showed an average latency of **0.01ms** per character. The synchronous mirror cycle of the Shell is efficient enough to maintain 60FPS even under heavy input load.

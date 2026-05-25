@@ -87,7 +87,13 @@ export function createShell(initialState, options = {}) {
         }
     };
 
-    const persist = async (data) => {
+    const syncState = () => {
+        const stateBlob = exportState(kernelState);
+        lastSerializedState = stateBlob;
+        return stateBlob;
+    };
+
+    const persistState = async (data) => {
         const wrapper = {
             version: version,
             checksum: calculateChecksum(data),
@@ -116,20 +122,7 @@ export function createShell(initialState, options = {}) {
         }
     };
 
-    const sync = async (isStructural = false) => {
-        if (isStructural) {
-            isPreviewing = false;
-        }
-
-        const stateBlob = exportState(kernelState);
-        lastSerializedState = stateBlob;
-
-        if (isStructural) {
-            await persist(stateBlob);
-        }
-
-        // Process Management (Side effects)
-        const context = kernelState.context;
+    const handleProcess = async (context) => {
         if (context.run_status === 'REQUESTED' && !currentProcess) {
             const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
             if (!NL) {
@@ -148,8 +141,25 @@ export function createShell(initialState, options = {}) {
                 }
             }
         }
+    };
 
-        render(kernelState.context);
+    const renderUI = (context) => {
+        render(context);
+    };
+
+    const sync = async (isStructural = false) => {
+        if (isStructural) {
+            isPreviewing = false;
+        }
+
+        const stateBlob = syncState();
+
+        if (isStructural) {
+            await persistState(stateBlob);
+        }
+
+        await handleProcess(kernelState.context);
+        renderUI(kernelState.context);
     };
 
     const commitEphemeralBuffers = async () => {
