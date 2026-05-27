@@ -58,13 +58,19 @@ export class Scheduler {
             const task = this.queue.shift();
             if (task) {
                 try {
-                    // In a real Web Worker, we'd use performance.now() and deadlines
+                    const start = performance.now();
                     task.run();
+                    const duration = performance.now() - start;
+
+                    // Respect the 4ms compute slice for background tasks
+                    if (task.priority === 'background' && duration > 4) {
+                        console.warn(`Background task budget exceeded: ${duration.toFixed(2)}ms`);
+                    }
                 } catch (e) {
                     console.error('Task execution failed', e);
                 }
             }
-            // Yield to event loop if necessary
+            // Yield to event loop
             await new Promise(resolve => setTimeout(resolve, 0));
         }
 

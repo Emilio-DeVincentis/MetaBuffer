@@ -16,6 +16,8 @@ import { tokenize } from './worker/Tokenizer.js';
  * @property {number} selectionHead
  * @property {any} currentAst
  * @property {number} astVersion
+ * @property {number} scrollTop
+ * @property {number} viewHeight
  */
 
 // --- Worker State ---
@@ -93,7 +95,9 @@ function createBuffer(content = '', id = null) {
         selectionAnchor: 0,
         selectionHead: 0,
         currentAst: null,
-        astVersion: -1
+        astVersion: -1,
+        scrollTop: 0,
+        viewHeight: 800
     };
     buffers.set(bufferId, state);
     return bufferId;
@@ -131,6 +135,15 @@ const handlers = {
             focusedBufferId = activeBufferIds[activeBufferIds.length - 1] || null;
         }
         broadcastFrame();
+    },
+
+    'BUFFER/VIEWPORT_UPDATE': ({ bufferId, scrollTop, viewHeight }) => {
+        const b = buffers.get(bufferId);
+        if (b) {
+            b.scrollTop = scrollTop;
+            b.viewHeight = viewHeight;
+            broadcastFrame();
+        }
     },
 
     'BUFFER/CURSOR_MOVE': ({ bufferId, offset, select }) => {
@@ -171,7 +184,12 @@ const handlers = {
 
         const capturedVersion = ++b.version;
         scheduler.enqueue(() => {
-            plugins.forEach(p => p.beforeChange?.(b.pieceTable, start, end, text));
+            plugins.forEach(p => {
+                const startT = performance.now();
+                p.beforeChange?.(b.pieceTable, start, end, text);
+                const duration = performance.now() - startT;
+                if (duration > 2) console.warn(`Plugin performance penalty: beforeChange took ${duration.toFixed(2)}ms`);
+            });
 
             const lengthToDelete = end - start;
             if (lengthToDelete > 0) {
@@ -189,7 +207,12 @@ const handlers = {
             b.selectionHead = start + text.length;
             b.selectionAnchor = b.selectionHead;
 
-            plugins.forEach(p => p.afterChange?.(b.pieceTable, start, end, text));
+            plugins.forEach(p => {
+                const startT = performance.now();
+                p.afterChange?.(b.pieceTable, start, end, text);
+                const duration = performance.now() - startT;
+                if (duration > 2) console.warn(`Plugin performance penalty: afterChange took ${duration.toFixed(2)}ms`);
+            });
             broadcastFrame();
 
             updateIncrementalAST(b.id, start, end, text, capturedVersion);
@@ -266,10 +289,11 @@ function broadcastFrame() {
             const b = buffers.get(id);
             if (!b) return null;
 
-            const startLine = 0;
-            const endLine = b.lineManager.lineOffsets.length;
+            const LINE_HEIGHT = 19;
+            const startLine = Math.max(0, Math.floor(b.scrollTop / LINE_HEIGHT) - 5);
+            const endLine = Math.min(b.lineManager.lineOffsets.length, Math.ceil((b.scrollTop + b.viewHeight) / LINE_HEIGHT) + 5);
 
-            // htmlFrameChunk: a single string containing all lines
+            // htmlFrameChunk: a single string containing visible lines
             let htmlFrameChunk = '';
             const lineVersions = [];
 
@@ -281,7 +305,12 @@ function broadcastFrame() {
                 let rawContent = b.pieceTable.slice(start, end);
 
                 plugins.forEach(p => {
-                    if (p.renderLine) rawContent = p.renderLine(i, rawContent);
+                    if (p.renderLine) {
+                        const startT = performance.now();
+                        rawContent = p.renderLine(i, rawContent);
+                        const duration = performance.now() - startT;
+                        if (duration > 2) console.warn(`Plugin performance penalty: renderLine took ${duration.toFixed(2)}ms`);
+                    }
                 });
 
                 let htmlContent;

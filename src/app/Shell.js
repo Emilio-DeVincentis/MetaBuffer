@@ -121,6 +121,21 @@ export function createShell() {
             });
             window.addEventListener('mousemove', (e) => { if (isDragging) handleMouse(e, true); });
             window.addEventListener('mouseup', () => { isDragging = false; });
+
+            // Viewport Tracking
+            const reportViewport = () => {
+                worker.postMessage({
+                    type: 'BUFFER/VIEWPORT_UPDATE',
+                    payload: {
+                        bufferId,
+                        scrollTop: canvas.scrollTop,
+                        viewHeight: canvas.clientHeight
+                    }
+                });
+            };
+            canvas.addEventListener('scroll', reportViewport);
+            window.addEventListener('resize', reportViewport);
+            reportViewport();
         }
     };
 
