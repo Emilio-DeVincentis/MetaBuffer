@@ -13,6 +13,7 @@ class Node {
         this.start = start;
         this.length = length;
         this.leftSubtreeLength = 0;
+        this.totalLength = length;
         this.color = Node.RED;
         this.left = null;
         this.right = null;
@@ -36,11 +37,12 @@ export class PieceTable {
         if (originalContent.length > 0) {
             this.root = new Node('original', 0, originalContent.length);
             this.root.color = Node.BLACK;
+            this._updateMetadata(this.root);
         }
     }
 
     get length() {
-        return this.root ? this.root.leftSubtreeLength + this.root.length + this._getTreeLength(this.root.right) : 0;
+        return this.root ? this.root.totalLength : 0;
     }
 
     get pieces() {
@@ -58,10 +60,6 @@ export class PieceTable {
         this._inOrder(node.right, callback);
     }
 
-    _getTreeLength(node) {
-        if (!node) return 0;
-        return node.leftSubtreeLength + node.length + this._getTreeLength(node.right);
-    }
 
     insert(offset, text) {
         if (text.length === 0) return;
@@ -121,7 +119,8 @@ export class PieceTable {
 
     _updateMetadata(node) {
         while (node) {
-            node.leftSubtreeLength = this._getTreeLength(node.left);
+            node.leftSubtreeLength = node.left ? node.left.totalLength : 0;
+            node.totalLength = node.leftSubtreeLength + node.length + (node.right ? node.right.totalLength : 0);
             node = node.parent;
         }
     }
@@ -337,7 +336,64 @@ export class PieceTable {
         else if (y.parent) this._updateMetadata(y.parent);
         else if (this.root) this._updateMetadata(this.root);
 
-        // RB fixup omitted for brevity in delete, but height is kept manageable
+        if (yOriginalColor === Node.BLACK && x) {
+            this._fixDelete(x);
+        }
+    }
+
+    _fixDelete(x) {
+        while (x !== this.root && x.color === Node.BLACK) {
+            if (x === x.parent.left) {
+                let w = x.parent.right;
+                if (w.color === Node.RED) {
+                    w.color = Node.BLACK;
+                    x.parent.color = Node.RED;
+                    this._rotateLeft(x.parent);
+                    w = x.parent.right;
+                }
+                if (w.left.color === Node.BLACK && w.right.color === Node.BLACK) {
+                    w.color = Node.RED;
+                    x = x.parent;
+                } else {
+                    if (w.right.color === Node.BLACK) {
+                        w.left.color = Node.BLACK;
+                        w.color = Node.RED;
+                        this._rotateRight(w);
+                        w = x.parent.right;
+                    }
+                    w.color = x.parent.color;
+                    x.parent.color = Node.BLACK;
+                    w.right.color = Node.BLACK;
+                    this._rotateLeft(x.parent);
+                    x = this.root;
+                }
+            } else {
+                let w = x.parent.left;
+                if (w.color === Node.RED) {
+                    w.color = Node.BLACK;
+                    x.parent.color = Node.RED;
+                    this._rotateRight(x.parent);
+                    w = x.parent.left;
+                }
+                if (w.right.color === Node.BLACK && w.left.color === Node.BLACK) {
+                    w.color = Node.RED;
+                    x = x.parent;
+                } else {
+                    if (w.left.color === Node.BLACK) {
+                        w.right.color = Node.BLACK;
+                        w.color = Node.RED;
+                        this._rotateLeft(w);
+                        w = x.parent.left;
+                    }
+                    w.color = x.parent.color;
+                    x.parent.color = Node.BLACK;
+                    w.left.color = Node.BLACK;
+                    this._rotateRight(x.parent);
+                    x = this.root;
+                }
+            }
+        }
+        x.color = Node.BLACK;
     }
 
     _transplant(u, v) {
@@ -353,10 +409,20 @@ export class PieceTable {
     }
 
     hydrate(state) {
-        this.originalBuffer = state.originalBuffer;
-        this.addBuffer = state.addBuffer;
+        this.originalBuffer = state.originalBuffer || '';
+        this.addBuffer = state.addBuffer || '';
         this.root = null;
-        if (state.pieces) state.pieces.forEach(p => this.insert(this.length, p.source === 'original' ? this.originalBuffer.substr(p.start, p.length) : this.addBuffer.substr(p.start, p.length)));
+        if (state.pieces) {
+            state.pieces.forEach(p => {
+                const newNode = new Node(p.source, p.start, p.length);
+                if (!this.root) {
+                    this.root = newNode;
+                    this.root.color = Node.BLACK;
+                } else {
+                    this._insertAfter(this._rightmost(this.root), newNode);
+                }
+            });
+        }
     }
 
     setMarker(id, offset, affinity = 'forward') { this.markers.set(id, { offset, affinity }); }

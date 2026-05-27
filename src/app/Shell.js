@@ -144,8 +144,24 @@ export function createShell() {
             // Worker path relative to index.html in Neutralino/Serve
             worker = new Worker('../src/core/worker.js', { type: 'module' });
 
-            worker.onmessage = (e) => {
+            worker.onmessage = async (e) => {
                 const { type, payload } = e.data;
+                const NL = typeof window !== 'undefined' ? /** @type {any} */(window).Neutralino : null;
+
+                const saveToHost = async (data) => {
+                    const serialized = JSON.stringify(data, null, 2);
+                    if (NL) {
+                        try {
+                            await NL.filesystem.writeFile('./session.tmp', serialized);
+                            await NL.filesystem.move('./session.tmp', './session.json');
+                        } catch (err) {
+                            console.error('Auto-save failed:', err);
+                        }
+                    } else {
+                        localStorage.setItem('metabuffer_autosave', serialized);
+                    }
+                };
+
                 if (type === 'UI/FLUSH_FRAME') {
                     renderFrame(payload);
                 } else if (type === 'AI/SUGGESTION') {
@@ -153,7 +169,7 @@ export function createShell() {
                 } else if (type === 'CORE/HEARTBEAT') {
                     lastHeartbeat = Date.now();
                 } else if (type === 'CORE/AUTO_SAVE') {
-                    localStorage.setItem('metabuffer_autosave', JSON.stringify(payload));
+                    await saveToHost(payload);
                 }
             };
 
@@ -168,10 +184,24 @@ export function createShell() {
             const ribbon = document.getElementById('niri-ribbon');
             if (ribbon) ribbon.innerHTML = ''; // Clear for multi-buffer boot
 
-            const savedState = localStorage.getItem('metabuffer_autosave');
+            const NL = typeof window !== 'undefined' ? /** @type {any} */(window).Neutralino : null;
+            let savedState = null;
+
+            if (NL) {
+                try {
+                    savedState = await NL.filesystem.readFile('./session.json');
+                } catch (e) {
+                    // File not found, likely first boot
+                }
+            } else {
+                savedState = localStorage.getItem('metabuffer_autosave');
+            }
+
             if (savedState) {
+                console.log('Hydrating from saved state');
                 worker.postMessage({ type: 'CORE/HYDRATE', payload: JSON.parse(savedState) });
             } else {
+                console.log('Starting fresh session');
                 worker.postMessage({ type: 'BUFFER/INIT', payload: { content: '// MetaBuffer PieceTree Core Initialized\n' } });
             }
         },
@@ -203,6 +233,13 @@ export function createShell() {
         focusPrev: () => {
             if (worker) {
                 worker.postMessage({ type: 'CORE/FOCUS_NAV', payload: { direction: -1 } });
+            }
+        },
+
+        saveState: () => {
+            if (worker) {
+                console.log('Shell: Requesting save...');
+                worker.postMessage({ type: 'CORE/REQUEST_SAVE' });
             }
         }
     };

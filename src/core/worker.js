@@ -34,6 +34,7 @@ let plugins = [];
 
 // --- Auto-Save ---
 setInterval(() => {
+    if (buffers.size === 0) return;
     const savedStates = Array.from(buffers.values()).map(b => ({
         id: b.id,
         originalBuffer: b.pieceTable.originalBuffer,
@@ -184,9 +185,13 @@ const handlers = {
 
         const capturedVersion = ++b.version;
         scheduler.enqueue(() => {
+            // Reaction Pipeline Pass: signals emitted during this cycle
+            const signals = [];
+            const emit = (kind, payload) => signals.push({ kind, payload });
+
             plugins.forEach(p => {
                 const startT = performance.now();
-                p.beforeChange?.(b.pieceTable, start, end, text);
+                p.beforeChange?.(b.pieceTable, start, end, text, emit);
                 const duration = performance.now() - startT;
                 if (duration > 2) console.warn(`Plugin performance penalty: beforeChange took ${duration.toFixed(2)}ms`);
             });
@@ -209,10 +214,20 @@ const handlers = {
 
             plugins.forEach(p => {
                 const startT = performance.now();
-                p.afterChange?.(b.pieceTable, start, end, text);
+                p.afterChange?.(b.pieceTable, start, end, text, emit);
                 const duration = performance.now() - startT;
                 if (duration > 2) console.warn(`Plugin performance penalty: afterChange took ${duration.toFixed(2)}ms`);
             });
+
+            // Secondary Reaction Pass: allow plugins to react to emitted signals
+            if (signals.length > 0) {
+                plugins.forEach(p => {
+                    if (p.onSignal) {
+                        signals.forEach(s => p.onSignal(s.kind, s.payload, b.pieceTable, emit));
+                    }
+                });
+            }
+
             broadcastFrame();
 
             updateIncrementalAST(b.id, start, end, text, capturedVersion);
@@ -279,6 +294,61 @@ const handlers = {
         let nextIndex = (currentIndex + direction) % activeBufferIds.length;
         if (nextIndex < 0) nextIndex = activeBufferIds.length - 1;
         focusedBufferId = activeBufferIds[nextIndex];
+        broadcastFrame();
+    },
+
+    'CORE/REQUEST_SAVE': () => {
+        const savedStates = Array.from(buffers.values()).map(b => ({
+            id: b.id,
+            originalBuffer: b.pieceTable.originalBuffer,
+            addBuffer: b.pieceTable.addBuffer,
+            pieces: b.pieceTable.pieces,
+            version: b.version
+        }));
+        self.postMessage({
+            type: 'CORE/AUTO_SAVE',
+            payload: {
+                buffers: savedStates,
+                activeBufferIds,
+                focusedBufferId
+            }
+        });
+    },
+
+    'CORE/HYDRATE': (payload) => {
+        const { buffers: savedBuffers, activeBufferIds: savedActiveIds, focusedBufferId: savedFocusedId } = payload;
+
+        buffers.clear();
+        savedBuffers.forEach(b => {
+            const id = b.id;
+            const pieceTable = new PieceTable(b.originalBuffer);
+            pieceTable.addBuffer = b.addBuffer;
+            // PieceTable.hydrate reconstructs the tree from pieces
+            pieceTable.hydrate(b);
+
+            const content = pieceTable.slice(0, pieceTable.length);
+            const lineManager = new LineManager(content);
+
+            buffers.set(id, {
+                id,
+                pieceTable,
+                lineManager,
+                undoManager: new UndoManager(),
+                version: b.version || 0,
+                selectionAnchor: 0,
+                selectionHead: 0,
+                currentAst: null,
+                astVersion: -1,
+                scrollTop: 0,
+                viewHeight: 800
+            });
+
+            if (id >= nextBufferId) nextBufferId = id + 1;
+        });
+
+        activeBufferIds = savedActiveIds || [];
+        focusedBufferId = savedFocusedId || (activeBufferIds.length > 0 ? activeBufferIds[0] : null);
+
         broadcastFrame();
     }
 };

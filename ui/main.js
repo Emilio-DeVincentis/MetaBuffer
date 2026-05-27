@@ -7,6 +7,11 @@ window.onload = async () => {
         Neutralino.init();
     }
     await shell.boot();
+
+    const saveBtn = document.getElementById('btn-save');
+    if (saveBtn) {
+        saveBtn.onclick = () => shell.saveState();
+    }
 };
 
 window.addEventListener('keydown', (e) => {
