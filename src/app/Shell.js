@@ -9,11 +9,14 @@ export function createShell() {
 
     // UI References
     let container = null;
+    let caret = null;
 
     let activeAiSuggestion = null;
 
+    let lastHeartbeat = Date.now();
+
     const renderFrame = (frame) => {
-        if (!container) return;
+        if (!container || !caret) return;
 
         // BSR: Buffer-Side Rendering
         const currentLines = Array.from(container.querySelectorAll('.view-line'));
@@ -36,8 +39,8 @@ export function createShell() {
             lineEl.style.transform = `translate3d(0, ${line.index * 19}px, 0)`;
 
             if (lineEl.dataset.version !== String(line.version)) {
-                // XSS Protection: use textContent for buffer content
-                lineEl.textContent = line.content;
+                // Now receiving HTML spans from worker. Worker handles escaping of raw text.
+                lineEl.innerHTML = line.content;
 
                 // Inject AI Ghost Text if it belongs to this line
                 if (activeAiSuggestion && activeAiSuggestion.lineIndex === line.index) {
@@ -56,6 +59,11 @@ export function createShell() {
 
         // Remove old lines
         lineMap.forEach(el => el.remove());
+
+        // Position standalone caret
+        if (frame.cursor) {
+            caret.style.transform = `translate3d(${frame.cursor.column * 8.4}px, ${frame.cursor.line * 19}px, 0)`;
+        }
     };
 
     const shell = {
@@ -69,31 +77,55 @@ export function createShell() {
                     renderFrame(payload);
                 } else if (type === 'AI/SUGGESTION') {
                     activeAiSuggestion = payload;
-                    // Trigger a re-render or wait for next frame
+                } else if (type === 'CORE/HEARTBEAT') {
+                    lastHeartbeat = Date.now();
+                } else if (type === 'CORE/AUTO_SAVE') {
+                    localStorage.setItem('metabuffer_autosave', JSON.stringify(payload));
                 }
             };
+
+            // Heartbeat monitor
+            setInterval(() => {
+                if (Date.now() - lastHeartbeat > 5000) {
+                    console.error('Worker HANG detected! Restarting...');
+                    shell.boot(); // Recovery
+                }
+            }, 2000);
 
             // Setup UI structure for the new architecture
             const ribbon = document.getElementById('niri-ribbon');
             if (ribbon) {
                 ribbon.innerHTML = `
                     <div class="editor-column">
-                        <div class="editor-canvas" style="position: relative; height: 100%; overflow-y: auto;">
+                        <div class="editor-canvas" style="position: relative; height: 100%; overflow-y: auto; background: var(--bg-main);">
                             <div class="emacs-gpu-lines-container" style="position: relative;"></div>
+                            <div class="custom-caret" style="position: absolute; top: 0; left: 0; width: 2px; height: 19px; background: var(--accent-color); z-index: 100; transition: transform 0.05s;"></div>
                         </div>
                     </div>
                 `;
                 container = ribbon.querySelector('.emacs-gpu-lines-container');
+                caret = ribbon.querySelector('.custom-caret');
             }
 
             // Initialize EditContext
             if (typeof window !== 'undefined' && 'EditContext' in window) {
-                const canvas = document.querySelector('.editor-canvas');
+                const canvas = /** @type {HTMLElement} */(document.querySelector('.editor-canvas'));
                 if (canvas) {
                     // @ts-ignore
                     const editContext = new EditContext();
                     // @ts-ignore
                     canvas.editContext = editContext;
+
+                    // Support IME and OS integration
+                    const updateBounds = () => {
+                        const rect = canvas.getBoundingClientRect();
+                        // @ts-ignore
+                        editContext.updateControlBounds(rect);
+                        // @ts-ignore
+                        editContext.updateSelectionBounds(rect);
+                    };
+                    updateBounds();
+                    window.addEventListener('resize', updateBounds);
 
                     editContext.addEventListener('textupdate', (e) => {
                         worker.postMessage({
@@ -110,7 +142,12 @@ export function createShell() {
                 console.warn('EditContext not supported in this environment.');
             }
 
-            worker.postMessage({ type: 'BUFFER/INIT', payload: { content: '// MetaBuffer PieceTree Core Initialized\n' } });
+            const savedState = localStorage.getItem('metabuffer_autosave');
+            if (savedState) {
+                worker.postMessage({ type: 'CORE/HYDRATE', payload: JSON.parse(savedState) });
+            } else {
+                worker.postMessage({ type: 'BUFFER/INIT', payload: { content: '// MetaBuffer PieceTree Core Initialized\n' } });
+            }
         },
 
         undo: () => {

@@ -3,6 +3,7 @@ import { PieceTable } from './storage/PieceTable.js';
 import { LineManager } from './storage/LineManager.js';
 import { UndoManager } from './storage/UndoManager.js';
 import { Scheduler } from './worker/Scheduler.js';
+import { tokenize } from './worker/Tokenizer.js';
 
 // --- Worker State ---
 let pieceTable = new PieceTable('');
@@ -12,19 +13,44 @@ const scheduler = new Scheduler();
 
 let bufferVersion = 0;
 let plugins = [];
+let cursorOffset = 0;
+let selectionStart = null;
+
+// --- Auto-Save ---
+setInterval(() => {
+    self.postMessage({
+        type: 'CORE/AUTO_SAVE',
+        payload: {
+            originalBuffer: pieceTable.originalBuffer,
+            addBuffer: pieceTable.addBuffer,
+            pieces: pieceTable.pieces,
+            version: bufferVersion
+        }
+    });
+}, 10000);
+
+// --- Heartbeat ---
+setInterval(() => {
+    self.postMessage({ type: 'CORE/HEARTBEAT', payload: { timestamp: Date.now() } });
+}, 1000);
 
 // --- API ---
 
 const handlers = {
+    'CORE/HYDRATE': (state) => {
+        pieceTable.hydrate(state);
+        // Regenerate line manager from hydrated text
+        const fullText = pieceTable.slice(0, pieceTable.length);
+        lineManager = new LineManager(fullText);
+        bufferVersion = state.version || 0;
+        broadcastFrame();
+    },
+
     'PLUGIN/REGISTER': ({ code }) => {
-        // In a real system, we'd use a sandboxed evaluator or import()
-        // For v1, we simulate plugin registration
-        try {
-            const plugin = eval(code);
-            plugins.push(plugin);
-        } catch (e) {
-            console.error('Failed to register plugin', e);
-        }
+        // eval() removed for security.
+        // In V1, we simulate plugin registration by accepting predefined logic
+        // or using a safer alternative if required.
+        console.warn('PLUGIN/REGISTER via eval() is disabled for security.');
     },
 
     'BUFFER/INIT': ({ content }) => {
@@ -32,6 +58,11 @@ const handlers = {
         lineManager = new LineManager(content);
         undoManager = new UndoManager();
         bufferVersion = 0;
+        broadcastFrame();
+    },
+
+    'BUFFER/CURSOR_MOVE': ({ offset }) => {
+        cursorOffset = Math.max(0, Math.min(offset, pieceTable.length));
         broadcastFrame();
     },
 
@@ -54,6 +85,9 @@ const handlers = {
             }
 
             bufferVersion++;
+
+            // Move cursor to end of mutation
+            cursorOffset = start + text.length;
 
             // Plugin Hook: afterChange
             plugins.forEach(p => p.afterChange?.(pieceTable, start, end, text));
@@ -89,21 +123,26 @@ function broadcastFrame() {
         for (let i = startLine; i < endLine; i++) {
             const start = lineManager.lineOffsets[i];
             const end = i + 1 < lineManager.lineOffsets.length ? lineManager.lineOffsets[i+1] : pieceTable.length;
-            let content = pieceTable.slice(start, end);
+            let rawContent = pieceTable.slice(start, end);
 
             // Plugin Hook: renderLine
             plugins.forEach(p => {
                 if (p.renderLine) {
-                    content = p.renderLine(i, content);
+                    rawContent = p.renderLine(i, rawContent);
                 }
             });
+
+            const htmlContent = tokenize(rawContent);
 
             lines.push({
                 index: i,
                 version: lineManager.lineVersions[i],
-                content: content
+                content: htmlContent
             });
         }
+
+        const cursorLine = lineManager.getLineIndex(cursorOffset);
+        const cursorCol = cursorOffset - lineManager.lineOffsets[cursorLine];
 
         self.postMessage({
             type: 'UI/FLUSH_FRAME',
@@ -111,7 +150,11 @@ function broadcastFrame() {
                 bufferVersion,
                 startLine,
                 endLine,
-                lines
+                lines,
+                cursor: {
+                    line: cursorLine,
+                    column: cursorCol
+                }
             }
         });
     }, 'render');
