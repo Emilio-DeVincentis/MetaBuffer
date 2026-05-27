@@ -5,30 +5,46 @@ import { UndoManager } from './storage/UndoManager.js';
 import { Scheduler } from './worker/Scheduler.js';
 import { tokenize } from './worker/Tokenizer.js';
 
+/**
+ * @typedef {Object} BufferState
+ * @property {number} id
+ * @property {PieceTable} pieceTable
+ * @property {LineManager} lineManager
+ * @property {UndoManager} undoManager
+ * @property {number} version
+ * @property {number} selectionAnchor
+ * @property {number} selectionHead
+ * @property {any} currentAst
+ * @property {number} astVersion
+ */
+
 // --- Worker State ---
-let pieceTable = new PieceTable('');
-let lineManager = new LineManager('');
-let undoManager = new UndoManager();
+/** @type {Map<number, BufferState>} */
+const buffers = new Map();
+/** @type {number[]} */
+let activeBufferIds = [];
+/** @type {number | null} */
+let focusedBufferId = null;
+let nextBufferId = 1;
+
 const scheduler = new Scheduler();
-
-let bufferVersion = 0;
 let plugins = [];
-let selectionAnchor = 0;
-let selectionHead = 0;
-
-// Tree-sitter AST State
-let currentAst = null;
-let astVersion = -1;
 
 // --- Auto-Save ---
 setInterval(() => {
+    const savedStates = Array.from(buffers.values()).map(b => ({
+        id: b.id,
+        originalBuffer: b.pieceTable.originalBuffer,
+        addBuffer: b.pieceTable.addBuffer,
+        pieces: b.pieceTable.pieces,
+        version: b.version
+    }));
     self.postMessage({
         type: 'CORE/AUTO_SAVE',
         payload: {
-            originalBuffer: pieceTable.originalBuffer,
-            addBuffer: pieceTable.addBuffer,
-            pieces: pieceTable.pieces,
-            version: bufferVersion
+            buffers: savedStates,
+            activeBufferIds,
+            focusedBufferId
         }
     });
 }, 10000);
@@ -38,192 +54,237 @@ setInterval(() => {
     self.postMessage({ type: 'CORE/HEARTBEAT', payload: { timestamp: Date.now() } });
 }, 1000);
 
-// --- Tree-sitter (Placeholder for v1) ---
+// --- Tree-sitter Infrastructure ---
+// In a real environment, we'd import the WASM parser here
+// For this MVP, we provide a unified incremental parsing interface
+const AST_REGISTRY = new Map();
+
 async function initTreeSitter() {
-    // Parser initialization would go here
     console.log('Tree-sitter infrastructure ready');
 }
 initTreeSitter();
 
-// --- API ---
+function updateIncrementalAST(bufferId, start, end, text, version) {
+    // Strategy: Drop stale results if version changed since background task was queued
+    scheduler.enqueue(() => {
+        const b = buffers.get(bufferId);
+        if (!b || b.version !== version) return;
+
+        // Perform incremental parse
+        // For MVP, we simulate semantic token extraction
+        const semanticTokens = [];
+        AST_REGISTRY.set(bufferId, { version, tokens: semanticTokens });
+
+        // Refine Frame if version still matches
+        broadcastFrame();
+    }, 'background');
+}
+
+// --- API Helpers ---
+
+function createBuffer(content = '', id = null) {
+    const bufferId = id || nextBufferId++;
+    const state = {
+        id: bufferId,
+        pieceTable: new PieceTable(content),
+        lineManager: new LineManager(content),
+        undoManager: new UndoManager(),
+        version: 0,
+        selectionAnchor: 0,
+        selectionHead: 0,
+        currentAst: null,
+        astVersion: -1
+    };
+    buffers.set(bufferId, state);
+    return bufferId;
+}
+
+// --- API Handlers ---
 
 const handlers = {
-    'CORE/HYDRATE': (state) => {
-        pieceTable.hydrate(state);
-        // Regenerate line manager from hydrated text
-        const fullText = pieceTable.slice(0, pieceTable.length);
-        lineManager = new LineManager(fullText);
-        bufferVersion = state.version || 0;
-        broadcastFrame();
-    },
-
-    'PLUGIN/REGISTER': ({ code }) => {
-        // eval() removed for security.
-        // In V1, we simulate plugin registration by accepting predefined logic
-        // or using a safer alternative if required.
-        console.warn('PLUGIN/REGISTER via eval() is disabled for security.');
-    },
-
     'BUFFER/INIT': ({ content }) => {
-        pieceTable = new PieceTable(content);
-        lineManager = new LineManager(content);
-        undoManager = new UndoManager();
-        bufferVersion = 0;
+        buffers.clear();
+        const id = createBuffer(content);
+        activeBufferIds = [id];
+        focusedBufferId = id;
         broadcastFrame();
     },
 
-    'BUFFER/CURSOR_MOVE': ({ offset, select }) => {
-        const targetOffset = Math.max(0, Math.min(offset, pieceTable.length));
-        selectionHead = targetOffset;
-        if (!select) {
-            selectionAnchor = targetOffset;
+    'BUFFER/CREATE': ({ content = '' }) => {
+        const id = createBuffer(content);
+        activeBufferIds.push(id);
+        focusedBufferId = id;
+        broadcastFrame();
+    },
+
+    'BUFFER/FOCUS': ({ id }) => {
+        if (buffers.has(id)) {
+            focusedBufferId = id;
+            broadcastFrame();
+        }
+    },
+
+    'BUFFER/CLOSE': ({ id }) => {
+        buffers.delete(id);
+        activeBufferIds = activeBufferIds.filter(bid => bid !== id);
+        if (focusedBufferId === id) {
+            focusedBufferId = activeBufferIds[activeBufferIds.length - 1] || null;
         }
         broadcastFrame();
     },
 
-    'BUFFER/MOUSE_CLICK': ({ line, col, select }) => {
-        const lineCount = lineManager.lineOffsets.length;
-        const targetLine = Math.max(0, Math.min(line, lineCount - 1));
-        const lineStart = lineManager.lineOffsets[targetLine];
-        const lineEnd = targetLine + 1 < lineCount ? lineManager.lineOffsets[targetLine + 1] : pieceTable.length;
+    'BUFFER/CURSOR_MOVE': ({ bufferId, offset, select }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (!b) return;
 
-        // Offset within the line (clamped by line length excluding potential newline)
+        const targetOffset = Math.max(0, Math.min(offset, b.pieceTable.length));
+        b.selectionHead = targetOffset;
+        if (!select) {
+            b.selectionAnchor = targetOffset;
+        }
+        broadcastFrame();
+    },
+
+    'BUFFER/MOUSE_CLICK': ({ bufferId, line, col, select }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (!b) return;
+
+        const lineCount = b.lineManager.lineOffsets.length;
+        const targetLine = Math.max(0, Math.min(line, lineCount - 1));
+        const lineStart = b.lineManager.lineOffsets[targetLine];
+        const lineEnd = targetLine + 1 < lineCount ? b.lineManager.lineOffsets[targetLine + 1] : b.pieceTable.length;
+
         const maxCol = Math.max(0, lineEnd - lineStart - (targetLine + 1 < lineCount ? 1 : 0));
         const targetOffset = lineStart + Math.max(0, Math.min(col, maxCol));
 
-        selectionHead = targetOffset;
+        b.selectionHead = targetOffset;
         if (!select) {
-            selectionAnchor = targetOffset;
+            b.selectionAnchor = targetOffset;
+            focusedBufferId = b.id; // Focus on click
         }
         broadcastFrame();
     },
 
-    'BUFFER/MUTATE': ({ start = 0, end = 0, text = '', version }) => {
-        const capturedVersion = ++bufferVersion;
+    'BUFFER/MUTATE': ({ bufferId, start = 0, end = 0, text = '', version }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (!b) return;
+
+        const capturedVersion = ++b.version;
         scheduler.enqueue(() => {
-            // Plugin Hook: beforeChange
-            plugins.forEach(p => p.beforeChange?.(pieceTable, start, end, text));
+            plugins.forEach(p => p.beforeChange?.(b.pieceTable, start, end, text));
 
             const lengthToDelete = end - start;
             if (lengthToDelete > 0) {
-                const deletedText = pieceTable.slice(start, end);
-                pieceTable.delete(start, lengthToDelete);
-                lineManager.onDelete(start, lengthToDelete, deletedText);
-                undoManager.push({ type: 'delete', start, length: lengthToDelete, text: deletedText });
+                const deletedText = b.pieceTable.slice(start, end);
+                b.pieceTable.delete(start, lengthToDelete);
+                b.lineManager.onDelete(start, lengthToDelete, deletedText);
+                b.undoManager.push({ type: 'delete', start, length: lengthToDelete, text: deletedText });
             }
             if (text.length > 0) {
-                pieceTable.insert(start, text);
-                lineManager.onInsert(start, text);
-                undoManager.push({ type: 'insert', start, length: text.length, text });
+                b.pieceTable.insert(start, text);
+                b.lineManager.onInsert(start, text);
+                b.undoManager.push({ type: 'insert', start, length: text.length, text });
             }
 
-            // Move cursor to end of mutation
-            selectionHead = start + text.length;
-            selectionAnchor = selectionHead;
+            b.selectionHead = start + text.length;
+            b.selectionAnchor = b.selectionHead;
 
-            // Plugin Hook: afterChange
-            plugins.forEach(p => p.afterChange?.(pieceTable, start, end, text));
-
+            plugins.forEach(p => p.afterChange?.(b.pieceTable, start, end, text));
             broadcastFrame();
 
-            // Background: Parsing Task
-            scheduler.enqueue(() => {
-                if (capturedVersion === bufferVersion) {
-                    // Perform heavy Tree-sitter parsing here
-                    // For now, just simulate
-                    console.log(`Parsing version ${capturedVersion}...`);
-                    astVersion = capturedVersion;
-                    currentAst = { version: capturedVersion, type: 'mock' };
-                } else {
-                    console.log(`Dropping stale AST for version ${capturedVersion}`);
-                }
-            }, 'background');
+            updateIncrementalAST(b.id, start, end, text, capturedVersion);
         }, 'input');
     },
 
-    'BUFFER/UNDO': () => {
-        const record = undoManager.popUndo();
+    'BUFFER/UNDO': ({ bufferId }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (!b) return;
+
+        const record = b.undoManager.popUndo();
         if (record) {
-            // Apply inverse
             if (record.type === 'insert') {
-                pieceTable.delete(record.start, record.length);
-                lineManager.onDelete(record.start, record.length, record.text);
+                b.pieceTable.delete(record.start, record.length);
+                b.lineManager.onDelete(record.start, record.length, record.text);
             } else {
-                pieceTable.insert(record.start, record.text);
-                lineManager.onInsert(record.start, record.text);
+                b.pieceTable.insert(record.start, record.text);
+                b.lineManager.onInsert(record.start, record.text);
             }
-            bufferVersion++;
+            b.version++;
             broadcastFrame();
         }
+    },
+
+    'CORE/FOCUS_NAV': ({ direction }) => {
+        if (activeBufferIds.length === 0) return;
+        const currentIndex = activeBufferIds.indexOf(focusedBufferId);
+        let nextIndex = (currentIndex + direction) % activeBufferIds.length;
+        if (nextIndex < 0) nextIndex = activeBufferIds.length - 1;
+        focusedBufferId = activeBufferIds[nextIndex];
+        broadcastFrame();
     }
 };
 
 function broadcastFrame() {
     scheduler.enqueue(() => {
-        // v1 simple frame: send all lines
-        const startLine = 0;
-        const endLine = lineManager.lineOffsets.length;
+        const bufferSnapshots = activeBufferIds.map(id => {
+            const b = buffers.get(id);
+            if (!b) return null;
 
-        const lines = [];
-        for (let i = startLine; i < endLine; i++) {
-            const start = lineManager.lineOffsets[i];
-            const end = i + 1 < lineManager.lineOffsets.length ? lineManager.lineOffsets[i+1] : pieceTable.length;
-            let rawContent = pieceTable.slice(start, end);
+            const startLine = 0;
+            const endLine = b.lineManager.lineOffsets.length;
 
-            // Plugin Hook: renderLine
-            plugins.forEach(p => {
-                if (p.renderLine) {
-                    rawContent = p.renderLine(i, rawContent);
+            // htmlFrameChunk: a single string containing all lines
+            let htmlFrameChunk = '';
+            const lineVersions = [];
+
+            for (let i = startLine; i < endLine; i++) {
+                const start = b.lineManager.lineOffsets[i];
+                const end = i + 1 < b.lineManager.lineOffsets.length ? b.lineManager.lineOffsets[i+1] : b.pieceTable.length;
+                let rawContent = b.pieceTable.slice(start, end);
+
+                plugins.forEach(p => {
+                    if (p.renderLine) rawContent = p.renderLine(i, rawContent);
+                });
+
+                const htmlContent = tokenize(rawContent);
+                const selStart = Math.min(b.selectionAnchor, b.selectionHead);
+                const selEnd = Math.max(b.selectionAnchor, b.selectionHead);
+                const relSelStart = Math.max(0, Math.min(selStart - start, end - start));
+                const relSelEnd = Math.max(0, Math.min(selEnd - start, end - start));
+
+                let selectionHtml = '';
+                if (relSelStart < relSelEnd) {
+                    selectionHtml = `<div class="emacs-selection" style="position: absolute; top: 0; height: 100%; left: ${relSelStart * 8.4}px; width: ${(relSelEnd - relSelStart) * 8.4}px; background-color: rgba(0, 122, 204, 0.3); pointer-events: none;"></div>`;
                 }
-            });
 
-            const htmlContent = tokenize(rawContent);
+                htmlFrameChunk += `<div class="view-line" data-line-index="${i}" data-version="${b.lineManager.lineVersions[i]}" style="position: absolute; top: 0; left: 0; transform: translate3d(0, ${i * 19}px, 0);">${htmlContent}${selectionHtml}</div>`;
+                lineVersions.push(b.lineManager.lineVersions[i]);
+            }
 
-            lines.push({
-                index: i,
-                version: lineManager.lineVersions[i],
-                content: htmlContent
-            });
-        }
-
-        const cursorLine = lineManager.getLineIndex(selectionHead);
-        const cursorCol = selectionHead - lineManager.lineOffsets[cursorLine];
-
-        const selStart = Math.min(selectionAnchor, selectionHead);
-        const selEnd = Math.max(selectionAnchor, selectionHead);
-
-        const linesWithSelection = lines.map(line => {
-            const lineStart = lineManager.lineOffsets[line.index];
-            const lineEnd = line.index + 1 < lineManager.lineOffsets.length ? lineManager.lineOffsets[line.index + 1] : pieceTable.length;
-
-            // Calculate relative selection in this line
-            const relSelStart = Math.max(0, Math.min(selStart - lineStart, lineEnd - lineStart));
-            const relSelEnd = Math.max(0, Math.min(selEnd - lineStart, lineEnd - lineStart));
+            const cursorLine = b.lineManager.getLineIndex(b.selectionHead);
+            const cursorCol = b.selectionHead - b.lineManager.lineOffsets[cursorLine];
 
             return {
-                ...line,
-                selection: relSelStart < relSelEnd ? { start: relSelStart, end: relSelEnd } : null
+                id,
+                version: b.version,
+                htmlFrameChunk,
+                lineVersions,
+                cursor: { line: cursorLine, column: cursorCol }
             };
-        });
+        }).filter(Boolean);
 
         self.postMessage({
             type: 'UI/FLUSH_FRAME',
             payload: {
-                bufferVersion,
-                startLine,
-                endLine,
-                lines: linesWithSelection,
-                cursor: {
-                    line: cursorLine,
-                    column: cursorCol
-                }
+                focusedBufferId,
+                buffers: bufferSnapshots
             }
         });
     }, 'render');
 }
 
 self.onmessage = (e) => {
-    const { type, payload } = e.data;
+    const { type, payload = {} } = e.data;
     const handler = handlers[type];
     if (handler) {
         handler(payload);

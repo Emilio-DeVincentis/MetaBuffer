@@ -6,77 +6,121 @@
 export function createShell() {
     /** @type {Worker | null} */
     let worker = null;
-
-    // UI References
-    let container = null;
-    let caret = null;
-
     let activeAiSuggestion = null;
-
     let lastHeartbeat = Date.now();
 
     const renderFrame = (frame) => {
-        if (!container || !caret) return;
+        const ribbon = document.getElementById('niri-ribbon');
+        if (!ribbon) return;
 
-        // BSR: Buffer-Side Rendering
-        const currentLines = Array.from(container.querySelectorAll('.view-line'));
-        const lineMap = new Map();
-        currentLines.forEach(el => lineMap.set(parseInt(/** @type {HTMLElement} */(el).dataset.lineIndex || '0'), el));
+        // Multi-Buffer Management
+        const currentBufferEls = Array.from(ribbon.querySelectorAll('.column'));
+        const bufferMap = new Map();
+        currentBufferEls.forEach(el => bufferMap.set(parseInt(/** @type {HTMLElement} */(el).dataset.bufferId || '0'), el));
 
-        frame.lines.forEach(line => {
-            let lineEl = lineMap.get(line.index);
-            if (!lineEl) {
-                lineEl = document.createElement('div');
-                lineEl.className = 'view-line';
-                lineEl.dataset.lineIndex = line.index;
-                container.appendChild(lineEl);
+        frame.buffers.forEach(buf => {
+            let bufEl = bufferMap.get(buf.id);
+            if (!bufEl) {
+                bufEl = document.createElement('div');
+                bufEl.className = 'column';
+                bufEl.dataset.bufferId = String(buf.id);
+                bufEl.innerHTML = `
+                    <div class="column-header">Buffer ${buf.id}</div>
+                    <div class="column-content">
+                        <div class="editor-canvas" style="position: relative; height: 100%; overflow-y: auto; background: var(--bg-main);">
+                            <div class="emacs-gpu-lines-container" style="position: relative;"></div>
+                            <div class="custom-caret" style="position: absolute; top: 0; left: 0; width: 2px; height: 19px; background: var(--accent-color); z-index: 100; transition: transform 0.05s; display: none;"></div>
+                        </div>
+                    </div>
+                `;
+                ribbon.appendChild(bufEl);
+                setupBufferInteractions(buf.id, bufEl);
             }
 
-            // Always update position as line index might have changed due to insertions/deletions elsewhere
-            lineEl.style.position = 'absolute';
-            lineEl.style.top = '0';
-            lineEl.style.left = '0';
-            lineEl.style.transform = `translate3d(0, ${line.index * 19}px, 0)`;
+            bufEl.classList.toggle('active', buf.id === frame.focusedBufferId);
 
-            if (lineEl.dataset.version !== String(line.version)) {
-                // Now receiving HTML spans from worker. Worker handles escaping of raw text.
-                lineEl.innerHTML = line.content;
+            const container = /** @type {HTMLElement} */(bufEl.querySelector('.emacs-gpu-lines-container'));
+            const caret = bufEl.querySelector('.custom-caret');
+            if (!container || !caret) return;
 
-                // Render selection if present
-                if (line.selection) {
-                    const selEl = document.createElement('div');
-                    selEl.className = 'emacs-selection';
-                    selEl.style.position = 'absolute';
-                    selEl.style.top = '0';
-                    selEl.style.height = '100%';
-                    selEl.style.left = `${line.selection.start * 8.4}px`;
-                    selEl.style.width = `${(line.selection.end - line.selection.start) * 8.4}px`;
-                    selEl.style.backgroundColor = 'rgba(0, 122, 204, 0.3)';
-                    selEl.style.pointerEvents = 'none';
-                    lineEl.appendChild(selEl);
-                }
+            // Show/Hide caret based on focus
+            /** @type {HTMLElement} */(caret).style.display = (buf.id === frame.focusedBufferId) ? 'block' : 'none';
 
-                // Inject AI Ghost Text if it belongs to this line
-                if (activeAiSuggestion && activeAiSuggestion.lineIndex === line.index) {
-                    const ghostSpan = document.createElement('span');
-                    ghostSpan.className = 'ai-ghost';
-                    ghostSpan.style.opacity = '0.5';
-                    ghostSpan.style.fontStyle = 'italic';
-                    ghostSpan.textContent = activeAiSuggestion.text;
-                    lineEl.appendChild(ghostSpan);
-                }
-
-                lineEl.dataset.version = line.version;
+            // BSR Optimization: if buffer version matches, only handle caret
+            if (container.dataset.version !== String(buf.version)) {
+                container.innerHTML = buf.htmlFrameChunk;
+                container.dataset.version = String(buf.version);
             }
-            lineMap.delete(line.index);
+
+            // Position Caret
+            if (buf.cursor) {
+                /** @type {HTMLElement} */(caret).style.transform = `translate3d(${buf.cursor.column * 8.4}px, ${buf.cursor.line * 19}px, 0)`;
+            }
+
+            bufferMap.delete(buf.id);
         });
 
-        // Remove old lines
-        lineMap.forEach(el => el.remove());
+        // Remove closed buffers
+        bufferMap.forEach(el => el.remove());
 
-        // Position standalone caret
-        if (frame.cursor) {
-            caret.style.transform = `translate3d(${frame.cursor.column * 8.4}px, ${frame.cursor.line * 19}px, 0)`;
+        // Horizontal Ribbon Scroll
+        const focusedIndex = frame.buffers.findIndex(b => b.id === frame.focusedBufferId);
+        if (focusedIndex !== -1) {
+            ribbon.style.transform = `translateX(-${focusedIndex * 400}px)`;
+        }
+    };
+
+    const setupBufferInteractions = (bufferId, bufEl) => {
+        const canvas = /** @type {HTMLElement} */(bufEl.querySelector('.editor-canvas'));
+        if (typeof window !== 'undefined' && 'EditContext' in window) {
+            // @ts-ignore
+            const editContext = new EditContext();
+            // @ts-ignore
+            canvas.editContext = editContext;
+
+            const updateBounds = () => {
+                const rect = canvas.getBoundingClientRect();
+                // @ts-ignore
+                editContext.updateControlBounds(rect);
+                // @ts-ignore
+                editContext.updateSelectionBounds(rect);
+            };
+            updateBounds();
+            window.addEventListener('resize', updateBounds);
+
+            editContext.addEventListener('textupdate', (e) => {
+                worker.postMessage({
+                    type: 'BUFFER/MUTATE',
+                    payload: {
+                        bufferId,
+                        start: e.updateRangeStart,
+                        end: e.updateRangeEnd,
+                        text: e.updateText
+                    }
+                });
+            });
+
+            // Mouse Interaction
+            let isDragging = false;
+            const handleMouse = (e, select = false) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top + canvas.scrollTop;
+                const line = Math.floor(y / 19);
+                const col = Math.round(x / 8.4);
+
+                worker.postMessage({
+                    type: 'BUFFER/MOUSE_CLICK',
+                    payload: { bufferId, line, col, select }
+                });
+            };
+
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                handleMouse(e);
+            });
+            window.addEventListener('mousemove', (e) => { if (isDragging) handleMouse(e, true); });
+            window.addEventListener('mouseup', () => { isDragging = false; });
         }
     };
 
@@ -106,87 +150,8 @@ export function createShell() {
                 }
             }, 2000);
 
-            // Setup UI structure for the new architecture
             const ribbon = document.getElementById('niri-ribbon');
-            if (ribbon) {
-                ribbon.innerHTML = `
-                    <div class="editor-column">
-                        <div class="editor-canvas" style="position: relative; height: 100%; overflow-y: auto; background: var(--bg-main);">
-                            <div class="emacs-gpu-lines-container" style="position: relative;"></div>
-                            <div class="custom-caret" style="position: absolute; top: 0; left: 0; width: 2px; height: 19px; background: var(--accent-color); z-index: 100; transition: transform 0.05s;"></div>
-                        </div>
-                    </div>
-                `;
-                container = ribbon.querySelector('.emacs-gpu-lines-container');
-                caret = ribbon.querySelector('.custom-caret');
-            }
-
-            // Initialize EditContext
-            if (typeof window !== 'undefined' && 'EditContext' in window) {
-                const canvas = /** @type {HTMLElement} */(document.querySelector('.editor-canvas'));
-                if (canvas) {
-                    // @ts-ignore
-                    const editContext = new EditContext();
-                    // @ts-ignore
-                    canvas.editContext = editContext;
-
-                    // Support IME and OS integration
-                    const updateBounds = () => {
-                        const rect = canvas.getBoundingClientRect();
-                        // @ts-ignore
-                        editContext.updateControlBounds(rect);
-                        // @ts-ignore
-                        editContext.updateSelectionBounds(rect);
-                    };
-                    updateBounds();
-                    window.addEventListener('resize', updateBounds);
-
-                    editContext.addEventListener('textupdate', (e) => {
-                        worker.postMessage({
-                            type: 'BUFFER/MUTATE',
-                            payload: {
-                                start: e.updateRangeStart,
-                                end: e.updateRangeEnd,
-                                text: e.updateText
-                            }
-                        });
-                    });
-
-                    // Mouse Interaction
-                    let isDragging = false;
-
-                    const handleMouse = (e, select = false) => {
-                        const rect = canvas.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const y = e.clientY - rect.top + canvas.scrollTop;
-
-                        const line = Math.floor(y / 19);
-                        const col = Math.round(x / 8.4);
-
-                        worker.postMessage({
-                            type: 'BUFFER/MOUSE_CLICK',
-                            payload: { line, col, select }
-                        });
-                    };
-
-                    canvas.addEventListener('mousedown', (e) => {
-                        isDragging = true;
-                        handleMouse(e);
-                    });
-
-                    window.addEventListener('mousemove', (e) => {
-                        if (isDragging) {
-                            handleMouse(e, true);
-                        }
-                    });
-
-                    window.addEventListener('mouseup', () => {
-                        isDragging = false;
-                    });
-                }
-            } else {
-                console.warn('EditContext not supported in this environment.');
-            }
+            if (ribbon) ribbon.innerHTML = ''; // Clear for multi-buffer boot
 
             const savedState = localStorage.getItem('metabuffer_autosave');
             if (savedState) {
@@ -199,6 +164,24 @@ export function createShell() {
         undo: () => {
             if (worker) {
                 worker.postMessage({ type: 'BUFFER/UNDO' });
+            }
+        },
+
+        createBuffer: (content = '') => {
+            if (worker) {
+                worker.postMessage({ type: 'BUFFER/CREATE', payload: { content } });
+            }
+        },
+
+        focusNext: () => {
+            if (worker) {
+                worker.postMessage({ type: 'CORE/FOCUS_NAV', payload: { direction: 1 } });
+            }
+        },
+
+        focusPrev: () => {
+            if (worker) {
+                worker.postMessage({ type: 'CORE/FOCUS_NAV', payload: { direction: -1 } });
             }
         }
     };

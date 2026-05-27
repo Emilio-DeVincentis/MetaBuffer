@@ -14,6 +14,15 @@ window.addEventListener('keydown', (e) => {
         if (e.key === 'z') {
             e.preventDefault();
             shell.undo();
+        } else if (e.key === 'n') {
+            e.preventDefault();
+            shell.createBuffer();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            shell.focusNext();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            shell.focusPrev();
         }
     }
 });
