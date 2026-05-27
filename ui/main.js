@@ -13,7 +13,14 @@ window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey)) {
         if (e.key === 'z') {
             e.preventDefault();
-            shell.undo();
+            if (e.shiftKey) {
+                shell.redo();
+            } else {
+                shell.undo();
+            }
+        } else if (e.key === 'y') {
+            e.preventDefault();
+            shell.redo();
         } else if (e.key === 'n') {
             e.preventDefault();
             shell.createBuffer();

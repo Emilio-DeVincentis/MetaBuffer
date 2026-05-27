@@ -167,6 +167,12 @@ export function createShell() {
             }
         },
 
+        redo: () => {
+            if (worker) {
+                worker.postMessage({ type: 'BUFFER/REDO' });
+            }
+        },
+
         createBuffer: (content = '') => {
             if (worker) {
                 worker.postMessage({ type: 'BUFFER/CREATE', payload: { content } });

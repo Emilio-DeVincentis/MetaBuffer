@@ -196,6 +196,24 @@ const handlers = {
         }, 'input');
     },
 
+    'BUFFER/SET_MARKER': ({ bufferId, id, offset, affinity }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (b) {
+            b.pieceTable.setMarker(id, offset, affinity);
+            broadcastFrame();
+        }
+    },
+
+    'PLUGIN/REGISTER_COMMAND': ({ name, handlerCode }) => {
+        try {
+            // Simplified for MVP: Handler is a string that we can call
+            // In a real system, this would be a structured plugin message
+            handlers[name] = () => { console.log(`Executing plugin command: ${name}`); };
+        } catch (e) {
+            console.error('Failed to register plugin command', e);
+        }
+    },
+
     'BUFFER/UNDO': ({ bufferId }) => {
         const b = buffers.get(bufferId || focusedBufferId);
         if (!b) return;
@@ -208,6 +226,24 @@ const handlers = {
             } else {
                 b.pieceTable.insert(record.start, record.text);
                 b.lineManager.onInsert(record.start, record.text);
+            }
+            b.version++;
+            broadcastFrame();
+        }
+    },
+
+    'BUFFER/REDO': ({ bufferId }) => {
+        const b = buffers.get(bufferId || focusedBufferId);
+        if (!b) return;
+
+        const record = b.undoManager.popRedo();
+        if (record) {
+            if (record.type === 'insert') {
+                b.pieceTable.insert(record.start, record.text);
+                b.lineManager.onInsert(record.start, record.text);
+            } else {
+                b.pieceTable.delete(record.start, record.length);
+                b.lineManager.onDelete(record.start, record.length, record.text);
             }
             b.version++;
             broadcastFrame();
@@ -237,6 +273,8 @@ function broadcastFrame() {
             let htmlFrameChunk = '';
             const lineVersions = [];
 
+            const astData = AST_REGISTRY.get(id);
+
             for (let i = startLine; i < endLine; i++) {
                 const start = b.lineManager.lineOffsets[i];
                 const end = i + 1 < b.lineManager.lineOffsets.length ? b.lineManager.lineOffsets[i+1] : b.pieceTable.length;
@@ -246,7 +284,15 @@ function broadcastFrame() {
                     if (p.renderLine) rawContent = p.renderLine(i, rawContent);
                 });
 
-                const htmlContent = tokenize(rawContent);
+                let htmlContent;
+                if (astData && astData.version === b.version) {
+                    // Refine AST: Use semantic results if version matches
+                    // Simulation: wrap 'function' keyword in special class if AST detected
+                    const semanticRaw = rawContent.replace(/\bfunction\b/g, (match) => `<span class="t-semantic-function">${match}</span>`);
+                    htmlContent = tokenize(semanticRaw); // Tokenizer will escape non-tagged parts
+                } else {
+                    htmlContent = tokenize(rawContent);
+                }
                 const selStart = Math.min(b.selectionAnchor, b.selectionHead);
                 const selEnd = Math.max(b.selectionAnchor, b.selectionHead);
                 const relSelStart = Math.max(0, Math.min(selStart - start, end - start));
@@ -257,7 +303,17 @@ function broadcastFrame() {
                     selectionHtml = `<div class="emacs-selection" style="position: absolute; top: 0; height: 100%; left: ${relSelStart * 8.4}px; width: ${(relSelEnd - relSelStart) * 8.4}px; background-color: rgba(0, 122, 204, 0.3); pointer-events: none;"></div>`;
                 }
 
-                htmlFrameChunk += `<div class="view-line" data-line-index="${i}" data-version="${b.lineManager.lineVersions[i]}" style="position: absolute; top: 0; left: 0; transform: translate3d(0, ${i * 19}px, 0);">${htmlContent}${selectionHtml}</div>`;
+                // Marker visualization
+                let markerHtml = '';
+                for (const [mid, marker] of b.pieceTable.markers) {
+                    const mOffset = b.pieceTable.getMarkerOffset(mid);
+                    if (mOffset >= start && mOffset < end) {
+                        const relMOffset = mOffset - start;
+                        markerHtml += `<div class="emacs-marker" data-marker-id="${mid}" style="position: absolute; top: 0; height: 100%; left: ${relMOffset * 8.4}px; width: 2px; background-color: var(--success-color); opacity: 0.8; pointer-events: none;"></div>`;
+                    }
+                }
+
+                htmlFrameChunk += `<div class="view-line" data-line-index="${i}" data-version="${b.lineManager.lineVersions[i]}" style="position: absolute; top: 0; left: 0; transform: translate3d(0, ${i * 19}px, 0);">${htmlContent}${selectionHtml}${markerHtml}</div>`;
                 lineVersions.push(b.lineManager.lineVersions[i]);
             }
 

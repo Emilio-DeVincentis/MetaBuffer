@@ -26,6 +26,10 @@ function escapeHtml(text) {
  * @returns {string}
  */
 export function tokenize(lineContent) {
+    // If content already contains semantic tags, we need to preserve them
+    if (lineContent.includes('<span')) {
+        return lineContent;
+    }
     let result = '';
     let offset = 0;
 
