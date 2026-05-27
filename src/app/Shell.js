@@ -1,402 +1,246 @@
 // @ts-check
 
-import { exportState, hydrateState } from '../core/serialization.js';
-import { dispatch, setContext, reconstructState, rollback, initialize } from '../core/MetaBufferRuntime.js';
-import { projectCode, projectWorkspace, projectDiagnostics, projectTerminal, projectInspector } from '../core/projections.js';
-import { pythonAnalyzer } from './presets/python.js';
-import { javaAnalyzer } from './presets/java.js';
-import { mockAIAgent } from './presets/ai.js';
-
-/** @typedef {import('../core/MetaBufferRuntime.js').KernelState} KernelState */
-/** @typedef {import('../types/index.js').ExecutionResult} ExecutionResult */
-
 /**
- * Shell handles the bridge between the Kernel and the Host (NeutralinoJS).
- * Implemented as a Factory Function to avoid 'this'.
- *
- * @param {KernelState} initialState
- * @param {Object} [options]
- * @returns {Object}
+ * Shell handles the bridge between the Passive UI and the Worker Core.
  */
-export function createShell(initialState, options = {}) {
-    let kernelState = initialState;
-    const sessionFile = './session.json';
-    const tempFile = './session.tmp';
-    const version = '1.0.0';
-    let storageMode = options.storageMode || 'fs';
+export function createShell() {
+    /** @type {Worker | null} */
+    let worker = null;
+    let activeAiSuggestion = null;
+    let lastHeartbeat = Date.now();
 
-    let lastSerializedState = null;
-    let isPreviewing = false;
-    let lastPreviewedTraceId = null;
-    const ephemeralTextBuffers = new Map(); // bufferId -> string
-    let currentProcess = null;
-    let db = null;
+    const renderFrame = (frame) => {
+        const ribbon = document.getElementById('niri-ribbon');
+        if (!ribbon) return;
 
-    let activeAISuggestion = null;
-    let isAiGenerating = false;
+        // Multi-Buffer Management
+        const currentBufferEls = Array.from(ribbon.querySelectorAll('.column'));
+        const bufferMap = new Map();
+        currentBufferEls.forEach(el => bufferMap.set(parseInt(/** @type {HTMLElement} */(el).dataset.bufferId || '0'), el));
 
-    // --- Private Utilities (Bound to closure) ---
-
-    const calculateChecksum = (str) => {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash |= 0;
-        }
-        return hash.toString(16);
-    };
-
-    const renderNotification = (msg) => {
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('shell-notify', { detail: msg }));
-        }
-    };
-
-    const renderFatalError = (msg) => {
-        console.error('FATAL:', msg);
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('shell-error', { detail: msg }));
-        }
-    };
-
-    const render = (context) => {
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('shell-render', { detail: {
-                workspace: projectWorkspace(context),
-                focusedId: context.focused_buffer_id,
-                diagnostics: projectDiagnostics(context),
-                inspector: projectInspector(context),
-                terminal: projectTerminal(context),
-                runStatus: context.run_status || 'IDLE',
-                traces: kernelState.traceStack,
-                isPreview: isPreviewing,
-                aiSuggestion: activeAISuggestion,
-                isAiGenerating: isAiGenerating
-            }}));
-        }
-    };
-
-    const fileExists = async (path) => {
-        const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
-        if (!NL) return false;
-        try {
-            const stats = await NL.filesystem.getStats(path);
-            return !!stats;
-        } catch (e) {
-            return false;
-        }
-    };
-
-    const syncState = () => {
-        const stateBlob = exportState(kernelState);
-        lastSerializedState = stateBlob;
-        return stateBlob;
-    };
-
-    const persistState = async (data) => {
-        const wrapper = {
-            version: version,
-            checksum: calculateChecksum(data),
-            data: data
-        };
-        const wrappedBlob = JSON.stringify(wrapper, null, 2);
-
-        if (storageMode === 'fs') {
-            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
-            if (!NL) return;
-            try {
-                await NL.filesystem.writeFile(tempFile, wrappedBlob);
-                await NL.filesystem.move(tempFile, sessionFile);
-            } catch (e) {
-                renderFatalError('FileSystem Failure: Unable to persist session.');
+        frame.buffers.forEach(buf => {
+            let bufEl = bufferMap.get(buf.id);
+            if (!bufEl) {
+                bufEl = document.createElement('div');
+                bufEl.className = 'column';
+                bufEl.dataset.bufferId = String(buf.id);
+                bufEl.innerHTML = `
+                    <div class="column-header">Buffer ${buf.id}</div>
+                    <div class="column-content">
+                        <div class="editor-canvas" style="position: relative; height: 100%; overflow-y: auto; background: var(--bg-main);">
+                            <div class="emacs-gpu-lines-container" style="position: relative;"></div>
+                            <div class="custom-caret" style="position: absolute; top: 0; left: 0; width: 2px; height: 19px; background: var(--accent-color); z-index: 100; transition: transform 0.05s; display: none;"></div>
+                        </div>
+                    </div>
+                `;
+                ribbon.appendChild(bufEl);
+                setupBufferInteractions(buf.id, bufEl);
             }
-        } else if (storageMode === 'idb') {
-            if (!db) return;
-            await new Promise((resolve, reject) => {
-                const transaction = db.transaction(['sessions'], 'readwrite');
-                const store = transaction.objectStore('sessions');
-                const request = store.put(wrappedBlob, 'latest');
-                request.onsuccess = resolve;
-                request.onerror = reject;
+
+            bufEl.classList.toggle('active', buf.id === frame.focusedBufferId);
+
+            const container = /** @type {HTMLElement} */(bufEl.querySelector('.emacs-gpu-lines-container'));
+            const caret = bufEl.querySelector('.custom-caret');
+            if (!container || !caret) return;
+
+            // Show/Hide caret based on focus
+            /** @type {HTMLElement} */(caret).style.display = (buf.id === frame.focusedBufferId) ? 'block' : 'none';
+
+            // BSR Optimization: if buffer version matches, only handle caret
+            if (container.dataset.version !== String(buf.version)) {
+                container.innerHTML = buf.htmlFrameChunk;
+                container.dataset.version = String(buf.version);
+            }
+
+            // Position Caret
+            if (buf.cursor) {
+                /** @type {HTMLElement} */(caret).style.transform = `translate3d(${buf.cursor.column * 8.4}px, ${buf.cursor.line * 19}px, 0)`;
+            }
+
+            bufferMap.delete(buf.id);
+        });
+
+        // Remove closed buffers
+        bufferMap.forEach(el => el.remove());
+
+        // Horizontal Ribbon Scroll
+        const focusedIndex = frame.buffers.findIndex(b => b.id === frame.focusedBufferId);
+        if (focusedIndex !== -1) {
+            ribbon.style.transform = `translateX(-${focusedIndex * 400}px)`;
+        }
+    };
+
+    const setupBufferInteractions = (bufferId, bufEl) => {
+        const canvas = /** @type {HTMLElement} */(bufEl.querySelector('.editor-canvas'));
+        if (typeof window !== 'undefined' && 'EditContext' in window) {
+            // @ts-ignore
+            const editContext = new EditContext();
+            // @ts-ignore
+            canvas.editContext = editContext;
+
+            const updateBounds = () => {
+                const rect = canvas.getBoundingClientRect();
+                // @ts-ignore
+                editContext.updateControlBounds(rect);
+                // @ts-ignore
+                editContext.updateSelectionBounds(rect);
+            };
+            updateBounds();
+            window.addEventListener('resize', updateBounds);
+
+            editContext.addEventListener('textupdate', (e) => {
+                worker.postMessage({
+                    type: 'BUFFER/MUTATE',
+                    payload: {
+                        bufferId,
+                        start: e.updateRangeStart,
+                        end: e.updateRangeEnd,
+                        text: e.updateText
+                    }
+                });
             });
-        }
-    };
 
-    const handleProcess = async (context) => {
-        if (context.run_status === 'REQUESTED' && !currentProcess) {
-            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
-            if (!NL) {
-                // Mock execution
-                await handleEvent(8, { run_status: 'RUNNING' });
-                await handleEvent(8, { incoming_output_chunk: { type: 'stdout', text: 'Neutralino not detected. Mocking execution...\n' } });
-                await handleEvent(8, { incoming_output_chunk: { type: 'exit', code: 0 } });
-            } else {
-                try {
-                    const cmd = `node -e ${JSON.stringify(context.js_source_code)}`;
-                    currentProcess = await NL.os.spawnProcess(cmd);
-                    await handleEvent(8, { run_status: 'RUNNING' });
-                } catch (e) {
-                    await handleEvent(8, { incoming_output_chunk: { type: 'stderr', text: `Spawn Failure: ${e.message}\n` } });
-                    await handleEvent(8, { incoming_output_chunk: { type: 'exit', code: 1 } });
-                }
-            }
-        }
-    };
+            // Mouse Interaction
+            let isDragging = false;
+            const handleMouse = (e, select = false) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top + canvas.scrollTop;
+                const line = Math.floor(y / 19);
+                const col = Math.round(x / 8.4);
 
-    const renderUI = (context) => {
-        render(context);
-    };
+                worker.postMessage({
+                    type: 'BUFFER/MOUSE_CLICK',
+                    payload: { bufferId, line, col, select }
+                });
+            };
 
-    const sync = async (isStructural = false) => {
-        if (isStructural) {
-            isPreviewing = false;
-        }
-
-        const stateBlob = syncState();
-
-        if (isStructural) {
-            await persistState(stateBlob);
-        }
-
-        await handleProcess(kernelState.context);
-        renderUI(kernelState.context);
-    };
-
-    const commitEphemeralBuffers = async () => {
-        for (const [id, content] of ephemeralTextBuffers) {
-            kernelState = setContext(kernelState, {
-                ...kernelState.context,
-                incoming_input: content,
-                focused_buffer_id: id
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                handleMouse(e);
             });
-            const result = dispatch(kernelState, 2);
-            if (result.ok && result.state) {
-                kernelState = result.state;
-            }
-        }
-        ephemeralTextBuffers.clear();
-    };
+            window.addEventListener('mousemove', (e) => { if (isDragging) handleMouse(e, true); });
+            window.addEventListener('mouseup', () => { isDragging = false; });
 
-    const handleEvent = async (bufferId, patch = null) => {
-        // 1. Parse / Prepare
-        if (isPreviewing && lastPreviewedTraceId) {
-            const res = rollback(kernelState, lastPreviewedTraceId);
-            if (res.ok && res.state) {
-                kernelState = res.state;
-                isPreviewing = false;
-            }
-        }
-
-        const isCommand = patch && (patch.type === 'COMMAND' || patch.pending_command);
-        if (isCommand) {
-            await commitEphemeralBuffers();
-        }
-
-        // 2. Validate & Execute
-        if (patch) {
-            kernelState = setContext(kernelState, { ...kernelState.context, ...patch });
-        }
-
-        const result = dispatch(kernelState, bufferId);
-        if (!result.ok) {
-            console.error('Dispatch failed:', result.error);
-            renderNotification(`Error: ${result.error.message}`);
-            return;
-        }
-
-        if (result.state) {
-            kernelState = result.state;
-        }
-
-        // 3. Sync (Persist & Render)
-        await sync(true);
-    };
-
-    const hydrateWithRecovery = async (blob) => {
-        try {
-            const wrapper = JSON.parse(blob);
-            const expectedChecksum = calculateChecksum(wrapper.data);
-
-            if (wrapper.checksum !== expectedChecksum) {
-                renderNotification('WARNING: Corrupted session detected. Resetting to clean state.');
-                const res = initialize(kernelState);
-                if (res.ok && res.state) kernelState = res.state;
-                return { ok: true };
-            }
-
-            const res = hydrateState(kernelState, wrapper.data);
-            if (res.ok && res.state) {
-                kernelState = res.state;
-            }
-            return res;
-        } catch (e) {
-            return { ok: false, error: { message: `RECOVERY_FAILED: ${e.message}` } };
+            // Viewport Tracking
+            const reportViewport = () => {
+                worker.postMessage({
+                    type: 'BUFFER/VIEWPORT_UPDATE',
+                    payload: {
+                        bufferId,
+                        scrollTop: canvas.scrollTop,
+                        viewHeight: canvas.clientHeight
+                    }
+                });
+            };
+            canvas.addEventListener('scroll', reportViewport);
+            window.addEventListener('resize', reportViewport);
+            reportViewport();
         }
     };
-
-    // --- Public API ---
 
     const shell = {
         boot: async () => {
-            const NL = typeof window !== 'undefined' ? /** @type {Record<string, unknown>} */ (window).Neutralino : null;
-            if (!NL && typeof indexedDB !== 'undefined') {
-                storageMode = 'idb';
-            }
+            // Worker path relative to index.html in Neutralino/Serve
+            worker = new Worker('../src/core/worker.js', { type: 'module' });
 
-            if (storageMode === 'idb') {
-                await new Promise((resolve, reject) => {
-                    const request = indexedDB.open('MetaBufferDB', 1);
-                    request.onupgradeneeded = (e) => {
-                        const db = /** @type {Record<string, unknown>} */ (e.target).result;
-                        db.createObjectStore('sessions');
-                    };
-                    request.onsuccess = (e) => {
-                        db = /** @type {Record<string, unknown>} */ (e.target).result;
-                        resolve();
-                    };
-                    request.onerror = reject;
-                });
-            }
+            worker.onmessage = async (e) => {
+                const { type, payload } = e.data;
+                const NL = typeof window !== 'undefined' ? /** @type {any} */(window).Neutralino : null;
 
-            try {
-                let blob = null;
-                if (storageMode === 'fs' && NL) {
-                    if (await fileExists(tempFile)) throw new Error('CRITICAL: session.tmp exists.');
-                    if (await fileExists(sessionFile)) {
-                        blob = await NL.filesystem.readFile(sessionFile);
+                const saveToHost = async (data) => {
+                    const serialized = JSON.stringify(data, null, 2);
+                    if (NL) {
+                        try {
+                            await NL.filesystem.writeFile('./session.tmp', serialized);
+                            await NL.filesystem.move('./session.tmp', './session.json');
+                        } catch (err) {
+                            console.error('Auto-save failed:', err);
+                        }
+                    } else {
+                        localStorage.setItem('metabuffer_autosave', serialized);
                     }
-                } else if (storageMode === 'idb') {
-                    blob = await new Promise((resolve, reject) => {
-                        const transaction = db.transaction(['sessions'], 'readonly');
-                        const store = transaction.objectStore('sessions');
-                        const request = store.get('latest');
-                        request.onsuccess = () => resolve(request.result);
-                        request.onerror = reject;
-                    });
-                }
+                };
 
-                if (blob) {
-                    const res = await hydrateWithRecovery(blob);
-                    if (!res.ok) throw new Error(res.error.message);
-                } else {
-                    const res = initialize(kernelState);
-                    if (res.ok && res.state) kernelState = res.state;
-
-                    // Set initial context if fresh
-                    kernelState = setContext(kernelState, {
-                        active_buffers: [1, 2, 7, 8],
-                        focus_stack: [1, 2],
-                        focused_buffer_id: 2,
-                        buffers: {
-                            1: { id: 1, kind: 'root' },
-                            2: { id: 2, kind: 'editor', content: '// Welcome to MetaBuffer System\nfunction hello() {\n  console.log("Hello World");\n}' },
-                            7: { id: 7, kind: 'inspector', metadata: { type: 'transformer' } },
-                            8: { id: 8, kind: 'inspector', metadata: { type: 'output' } }
-                        },
-                        js_source_code: '',
-                        diagnostics: {},
-                        suggestions: {},
-                        runtime_output: [],
-                        agent_status: 'IDLE',
-                        run_status: 'IDLE',
-                        next_buffer_id: 10,
-                        system_mode: 'DEFAULT'
-                    });
+                if (type === 'UI/FLUSH_FRAME') {
+                    renderFrame(payload);
+                } else if (type === 'AI/SUGGESTION') {
+                    activeAiSuggestion = payload;
+                } else if (type === 'CORE/HEARTBEAT') {
+                    lastHeartbeat = Date.now();
+                } else if (type === 'CORE/AUTO_SAVE') {
+                    await saveToHost(payload);
                 }
-            } catch (e) {
-                renderFatalError(`Boot Failure: ${e.message}`);
-                return { success: false, error: e };
-            }
+            };
+
+            // Heartbeat monitor
+            setInterval(() => {
+                if (Date.now() - lastHeartbeat > 5000) {
+                    console.error('Worker HANG detected! Restarting...');
+                    shell.boot(); // Recovery
+                }
+            }, 2000);
+
+            const ribbon = document.getElementById('niri-ribbon');
+            if (ribbon) ribbon.innerHTML = ''; // Clear for multi-buffer boot
+
+            const NL = typeof window !== 'undefined' ? /** @type {any} */(window).Neutralino : null;
+            let savedState = null;
 
             if (NL) {
-                NL.events.on('spawnedProcess', async (evt) => {
-                    const { id, action, data } = evt.detail;
-                    if (currentProcess && currentProcess.id === id) {
-                        const typeMap = { stdOut: 'stdout', stdErr: 'stderr', exit: 'exit' };
-                        const patch = { incoming_output_chunk: { type: typeMap[action], text: data, code: action === 'exit' ? data : undefined } };
-                        await handleEvent(8, patch);
-                        if (action === 'exit') currentProcess = null;
-                    }
-                });
-            }
-
-            await sync();
-            return { success: true };
-        },
-
-        handleEvent,
-
-        timeTravel: async (traceId) => {
-            const result = reconstructState(kernelState, traceId);
-            if (result.ok) {
-                isPreviewing = true;
-                lastPreviewedTraceId = traceId;
-                render(result.value);
-            }
-        },
-
-        updateEphemeralBuffer: (bufferId, content) => {
-            ephemeralTextBuffers.set(bufferId, content);
-        },
-
-        requestAISuggestion: async () => {
-            const bufferId = kernelState.context.focused_buffer_id;
-            if (!bufferId) return;
-
-            const code = projectCode(kernelState.context);
-            isAiGenerating = true;
-            activeAISuggestion = { text: '', bufferId, metadata: { agent_name: mockAIAgent.name } };
-            render(kernelState.context);
-
-            try {
-                const final = await mockAIAgent.complete(code, {}, (token) => {
-                    activeAISuggestion.text += token;
-                    render(kernelState.context);
-                });
-                activeAISuggestion.text = final;
-                activeAISuggestion.metadata.timestamp = new Date().toISOString();
-            } catch (e) {
-                renderNotification(`AI Error: ${e.message}`);
-                activeAISuggestion = null;
-            } finally {
-                isAiGenerating = false;
-                render(kernelState.context);
-            }
-        },
-
-        commitAISuggestion: async () => {
-            if (!activeAISuggestion) return;
-            const { text, bufferId, metadata } = activeAISuggestion;
-            await handleEvent(1, {
-                pending_command: {
-                    type: 'COMMIT_SUGGESTION',
-                    bufferId,
-                    content: text,
-                    metadata: { ...metadata, resolution_strategy: 'manual-accept' }
+                try {
+                    savedState = await NL.filesystem.readFile('./session.json');
+                } catch (e) {
+                    // File not found, likely first boot
                 }
-            });
-            activeAISuggestion = null;
-            await sync();
+            } else {
+                savedState = localStorage.getItem('metabuffer_autosave');
+            }
+
+            if (savedState) {
+                console.log('Hydrating from saved state');
+                worker.postMessage({ type: 'CORE/HYDRATE', payload: JSON.parse(savedState) });
+            } else {
+                console.log('Starting fresh session');
+                worker.postMessage({ type: 'BUFFER/INIT', payload: { content: '// MetaBuffer PieceTree Core Initialized\n' } });
+            }
         },
 
-        rejectAISuggestion: () => {
-            activeAISuggestion = null;
-            sync();
+        undo: () => {
+            if (worker) {
+                worker.postMessage({ type: 'BUFFER/UNDO' });
+            }
         },
 
-        triggerExternalAnalysis: async (lang) => {
-            const code = projectCode(kernelState.context);
-            const analyzer = lang === 'python' ? pythonAnalyzer : (lang === 'java' ? javaAnalyzer : null);
-            if (!analyzer) return;
+        redo: () => {
+            if (worker) {
+                worker.postMessage({ type: 'BUFFER/REDO' });
+            }
+        },
 
-            const results = analyzer.analyze(code);
-            await handleEvent(1, {
-                diagnostics: {
-                    ...kernelState.context.diagnostics,
-                    [`ext-${lang}`]: results
-                }
-            });
-            renderNotification(`External ${lang} analysis complete.`);
+        createBuffer: (content = '') => {
+            if (worker) {
+                worker.postMessage({ type: 'BUFFER/CREATE', payload: { content } });
+            }
+        },
+
+        focusNext: () => {
+            if (worker) {
+                worker.postMessage({ type: 'CORE/FOCUS_NAV', payload: { direction: 1 } });
+            }
+        },
+
+        focusPrev: () => {
+            if (worker) {
+                worker.postMessage({ type: 'CORE/FOCUS_NAV', payload: { direction: -1 } });
+            }
+        },
+
+        saveState: () => {
+            if (worker) {
+                console.log('Shell: Requesting save...');
+                worker.postMessage({ type: 'CORE/REQUEST_SAVE' });
+            }
         }
     };
 

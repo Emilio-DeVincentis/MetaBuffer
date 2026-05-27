@@ -327,3 +327,26 @@ kbd {
 .hidden {
     display: none !important;
 }
+
+/* Syntax Highlighting */
+.view-line {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 19px;
+    white-space: pre;
+}
+
+.t-keyword { color: #569cd6; font-weight: bold; }
+.t-string { color: #ce9178; }
+.t-comment { color: #6a9955; font-style: italic; }
+.t-number { color: #b5cea8; }
+.t-operator { color: #d4d4d4; }
+
+.custom-caret {
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+    from, to { opacity: 1; }
+    50% { opacity: 0; }
+}
