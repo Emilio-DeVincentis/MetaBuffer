@@ -42,6 +42,20 @@ export function createShell() {
                 // Now receiving HTML spans from worker. Worker handles escaping of raw text.
                 lineEl.innerHTML = line.content;
 
+                // Render selection if present
+                if (line.selection) {
+                    const selEl = document.createElement('div');
+                    selEl.className = 'emacs-selection';
+                    selEl.style.position = 'absolute';
+                    selEl.style.top = '0';
+                    selEl.style.height = '100%';
+                    selEl.style.left = `${line.selection.start * 8.4}px`;
+                    selEl.style.width = `${(line.selection.end - line.selection.start) * 8.4}px`;
+                    selEl.style.backgroundColor = 'rgba(0, 122, 204, 0.3)';
+                    selEl.style.pointerEvents = 'none';
+                    lineEl.appendChild(selEl);
+                }
+
                 // Inject AI Ghost Text if it belongs to this line
                 if (activeAiSuggestion && activeAiSuggestion.lineIndex === line.index) {
                     const ghostSpan = document.createElement('span');
@@ -136,6 +150,38 @@ export function createShell() {
                                 text: e.updateText
                             }
                         });
+                    });
+
+                    // Mouse Interaction
+                    let isDragging = false;
+
+                    const handleMouse = (e, select = false) => {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top + canvas.scrollTop;
+
+                        const line = Math.floor(y / 19);
+                        const col = Math.round(x / 8.4);
+
+                        worker.postMessage({
+                            type: 'BUFFER/MOUSE_CLICK',
+                            payload: { line, col, select }
+                        });
+                    };
+
+                    canvas.addEventListener('mousedown', (e) => {
+                        isDragging = true;
+                        handleMouse(e);
+                    });
+
+                    window.addEventListener('mousemove', (e) => {
+                        if (isDragging) {
+                            handleMouse(e, true);
+                        }
+                    });
+
+                    window.addEventListener('mouseup', () => {
+                        isDragging = false;
                     });
                 }
             } else {

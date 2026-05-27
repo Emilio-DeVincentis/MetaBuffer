@@ -22,7 +22,15 @@ export class Scheduler {
      * @param {TaskPriority} priority
      */
     enqueue(taskFn, priority = 'background') {
+        // Coalescing logic: if a render task is already in queue, don't add another one
+        if (priority === 'render') {
+            const hasRenderTask = this.queue.some(t => t.priority === 'render');
+            if (hasRenderTask) return;
+        }
+
         this.queue.push({ priority, run: taskFn });
+
+        // Priority Sort: input > render > background
         this.queue.sort((a, b) => this._priorityToValue(b.priority) - this._priorityToValue(a.priority));
 
         if (!this.isProcessing) {

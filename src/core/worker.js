@@ -13,8 +13,12 @@ const scheduler = new Scheduler();
 
 let bufferVersion = 0;
 let plugins = [];
-let cursorOffset = 0;
-let selectionStart = null;
+let selectionAnchor = 0;
+let selectionHead = 0;
+
+// Tree-sitter AST State
+let currentAst = null;
+let astVersion = -1;
 
 // --- Auto-Save ---
 setInterval(() => {
@@ -33,6 +37,13 @@ setInterval(() => {
 setInterval(() => {
     self.postMessage({ type: 'CORE/HEARTBEAT', payload: { timestamp: Date.now() } });
 }, 1000);
+
+// --- Tree-sitter (Placeholder for v1) ---
+async function initTreeSitter() {
+    // Parser initialization would go here
+    console.log('Tree-sitter infrastructure ready');
+}
+initTreeSitter();
 
 // --- API ---
 
@@ -61,12 +72,34 @@ const handlers = {
         broadcastFrame();
     },
 
-    'BUFFER/CURSOR_MOVE': ({ offset }) => {
-        cursorOffset = Math.max(0, Math.min(offset, pieceTable.length));
+    'BUFFER/CURSOR_MOVE': ({ offset, select }) => {
+        const targetOffset = Math.max(0, Math.min(offset, pieceTable.length));
+        selectionHead = targetOffset;
+        if (!select) {
+            selectionAnchor = targetOffset;
+        }
+        broadcastFrame();
+    },
+
+    'BUFFER/MOUSE_CLICK': ({ line, col, select }) => {
+        const lineCount = lineManager.lineOffsets.length;
+        const targetLine = Math.max(0, Math.min(line, lineCount - 1));
+        const lineStart = lineManager.lineOffsets[targetLine];
+        const lineEnd = targetLine + 1 < lineCount ? lineManager.lineOffsets[targetLine + 1] : pieceTable.length;
+
+        // Offset within the line (clamped by line length excluding potential newline)
+        const maxCol = Math.max(0, lineEnd - lineStart - (targetLine + 1 < lineCount ? 1 : 0));
+        const targetOffset = lineStart + Math.max(0, Math.min(col, maxCol));
+
+        selectionHead = targetOffset;
+        if (!select) {
+            selectionAnchor = targetOffset;
+        }
         broadcastFrame();
     },
 
     'BUFFER/MUTATE': ({ start = 0, end = 0, text = '', version }) => {
+        const capturedVersion = ++bufferVersion;
         scheduler.enqueue(() => {
             // Plugin Hook: beforeChange
             plugins.forEach(p => p.beforeChange?.(pieceTable, start, end, text));
@@ -84,15 +117,27 @@ const handlers = {
                 undoManager.push({ type: 'insert', start, length: text.length, text });
             }
 
-            bufferVersion++;
-
             // Move cursor to end of mutation
-            cursorOffset = start + text.length;
+            selectionHead = start + text.length;
+            selectionAnchor = selectionHead;
 
             // Plugin Hook: afterChange
             plugins.forEach(p => p.afterChange?.(pieceTable, start, end, text));
 
             broadcastFrame();
+
+            // Background: Parsing Task
+            scheduler.enqueue(() => {
+                if (capturedVersion === bufferVersion) {
+                    // Perform heavy Tree-sitter parsing here
+                    // For now, just simulate
+                    console.log(`Parsing version ${capturedVersion}...`);
+                    astVersion = capturedVersion;
+                    currentAst = { version: capturedVersion, type: 'mock' };
+                } else {
+                    console.log(`Dropping stale AST for version ${capturedVersion}`);
+                }
+            }, 'background');
         }, 'input');
     },
 
@@ -141,8 +186,25 @@ function broadcastFrame() {
             });
         }
 
-        const cursorLine = lineManager.getLineIndex(cursorOffset);
-        const cursorCol = cursorOffset - lineManager.lineOffsets[cursorLine];
+        const cursorLine = lineManager.getLineIndex(selectionHead);
+        const cursorCol = selectionHead - lineManager.lineOffsets[cursorLine];
+
+        const selStart = Math.min(selectionAnchor, selectionHead);
+        const selEnd = Math.max(selectionAnchor, selectionHead);
+
+        const linesWithSelection = lines.map(line => {
+            const lineStart = lineManager.lineOffsets[line.index];
+            const lineEnd = line.index + 1 < lineManager.lineOffsets.length ? lineManager.lineOffsets[line.index + 1] : pieceTable.length;
+
+            // Calculate relative selection in this line
+            const relSelStart = Math.max(0, Math.min(selStart - lineStart, lineEnd - lineStart));
+            const relSelEnd = Math.max(0, Math.min(selEnd - lineStart, lineEnd - lineStart));
+
+            return {
+                ...line,
+                selection: relSelStart < relSelEnd ? { start: relSelStart, end: relSelEnd } : null
+            };
+        });
 
         self.postMessage({
             type: 'UI/FLUSH_FRAME',
@@ -150,7 +212,7 @@ function broadcastFrame() {
                 bufferVersion,
                 startLine,
                 endLine,
-                lines,
+                lines: linesWithSelection,
                 cursor: {
                     line: cursorLine,
                     column: cursorCol
