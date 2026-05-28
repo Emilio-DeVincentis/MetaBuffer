@@ -13,6 +13,28 @@ export function createShell() {
         const ribbon = document.getElementById('niri-ribbon');
         if (!ribbon) return;
 
+        // Trace Viewer Update
+        const traceContent = document.getElementById('trace-content');
+        if (traceContent && frame.traces) {
+            traceContent.innerHTML = frame.traces.map(t => `
+                <div class="trace-item">
+                    <span class="trace-id">#${t.id}</span>
+                    <span class="trace-info">${t.type} (buf:${t.bufferId})</span>
+                </div>
+            `).join('');
+        }
+
+        // Diagnostics Panel Update
+        const diagContent = document.getElementById('diagnostics-content');
+        if (diagContent && frame.inspector) {
+            diagContent.innerHTML = `
+                <div>Buffers: ${frame.inspector.totalBuffers}</div>
+                <div>Active: ${frame.inspector.activeCount}</div>
+                <div>Traces: ${frame.inspector.traceCount}</div>
+                <div>Uptime: ${(frame.inspector.workerUptime / 1000).toFixed(1)}s</div>
+            `;
+        }
+
         // Multi-Buffer Management
         const currentBufferEls = Array.from(ribbon.querySelectorAll('.column'));
         const bufferMap = new Map();
@@ -46,11 +68,33 @@ export function createShell() {
             // Show/Hide caret based on focus
             /** @type {HTMLElement} */(caret).style.display = (buf.id === frame.focusedBufferId) ? 'block' : 'none';
 
-            // BSR Optimization: if buffer version matches, only handle caret
-            if (container.dataset.version !== String(buf.version)) {
-                container.innerHTML = buf.htmlFrameChunk;
-                container.dataset.version = String(buf.version);
-            }
+            // BSR Optimization: incremental row-level updates
+            const existingLines = new Set();
+            buf.lines.forEach(line => {
+                let lineEl = container.querySelector(`.view-line[data-line-index="${line.index}"]`);
+                if (!lineEl) {
+                    lineEl = document.createElement('div');
+                    lineEl.className = 'view-line';
+                    lineEl.dataset.lineIndex = String(line.index);
+                    lineEl.style.position = 'absolute';
+                    lineEl.style.top = '0';
+                    lineEl.style.left = '0';
+                    lineEl.style.transform = `translate3d(0, ${line.index * 19}px, 0)`;
+                    container.appendChild(lineEl);
+                }
+                if (lineEl.dataset.version !== String(line.version)) {
+                    lineEl.innerHTML = line.html;
+                    lineEl.dataset.version = String(line.version);
+                }
+                existingLines.add(String(line.index));
+            });
+
+            // Cleanup lines outside viewport
+            Array.from(container.querySelectorAll('.view-line')).forEach(el => {
+                if (!existingLines.has(/** @type {HTMLElement} */(el).dataset.lineIndex)) {
+                    el.remove();
+                }
+            });
 
             // Position Caret
             if (buf.cursor) {

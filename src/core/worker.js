@@ -4,6 +4,7 @@ import { LineManager } from './storage/LineManager.js';
 import { UndoManager } from './storage/UndoManager.js';
 import { Scheduler } from './worker/Scheduler.js';
 import { tokenize } from './worker/Tokenizer.js';
+import { TraceRepository } from './TraceRepository.js';
 
 /**
  * @typedef {Object} BufferState
@@ -30,6 +31,7 @@ let focusedBufferId = null;
 let nextBufferId = 1;
 
 const scheduler = new Scheduler();
+const traceRepo = new TraceRepository();
 let plugins = [];
 
 // --- Auto-Save ---
@@ -112,6 +114,7 @@ const handlers = {
         const id = createBuffer(content);
         activeBufferIds = [id];
         focusedBufferId = id;
+        traceRepo.append(id, 'BOOTSTRAP', { content });
         broadcastFrame();
     },
 
@@ -119,12 +122,15 @@ const handlers = {
         const id = createBuffer(content);
         activeBufferIds.push(id);
         focusedBufferId = id;
+        traceRepo.append(id, 'BUFFER_CREATE', { content });
         broadcastFrame();
     },
 
     'BUFFER/FOCUS': ({ id }) => {
         if (buffers.has(id)) {
+            const oldFocus = focusedBufferId;
             focusedBufferId = id;
+            traceRepo.append(id, 'FOCUS_SHIFT', { from: oldFocus, to: id });
             broadcastFrame();
         }
     },
@@ -363,10 +369,7 @@ function broadcastFrame() {
             const startLine = Math.max(0, Math.floor(b.scrollTop / LINE_HEIGHT) - 5);
             const endLine = Math.min(b.lineManager.lineOffsets.length, Math.ceil((b.scrollTop + b.viewHeight) / LINE_HEIGHT) + 5);
 
-            // htmlFrameChunk: a single string containing visible lines
-            let htmlFrameChunk = '';
-            const lineVersions = [];
-
+            const lines = [];
             const astData = AST_REGISTRY.get(id);
 
             for (let i = startLine; i < endLine; i++) {
@@ -385,13 +388,12 @@ function broadcastFrame() {
 
                 let htmlContent;
                 if (astData && astData.version === b.version) {
-                    // Refine AST: Use semantic results if version matches
-                    // Simulation: wrap 'function' keyword in special class if AST detected
                     const semanticRaw = rawContent.replace(/\bfunction\b/g, (match) => `<span class="t-semantic-function">${match}</span>`);
-                    htmlContent = tokenize(semanticRaw); // Tokenizer will escape non-tagged parts
+                    htmlContent = tokenize(semanticRaw);
                 } else {
                     htmlContent = tokenize(rawContent);
                 }
+
                 const selStart = Math.min(b.selectionAnchor, b.selectionHead);
                 const selEnd = Math.max(b.selectionAnchor, b.selectionHead);
                 const relSelStart = Math.max(0, Math.min(selStart - start, end - start));
@@ -402,7 +404,6 @@ function broadcastFrame() {
                     selectionHtml = `<div class="emacs-selection" style="position: absolute; top: 0; height: 100%; left: ${relSelStart * 8.4}px; width: ${(relSelEnd - relSelStart) * 8.4}px; background-color: rgba(0, 122, 204, 0.3); pointer-events: none;"></div>`;
                 }
 
-                // Marker visualization
                 let markerHtml = '';
                 for (const [mid, marker] of b.pieceTable.markers) {
                     const mOffset = b.pieceTable.getMarkerOffset(mid);
@@ -412,8 +413,11 @@ function broadcastFrame() {
                     }
                 }
 
-                htmlFrameChunk += `<div class="view-line" data-line-index="${i}" data-version="${b.lineManager.lineVersions[i]}" style="position: absolute; top: 0; left: 0; transform: translate3d(0, ${i * 19}px, 0);">${htmlContent}${selectionHtml}${markerHtml}</div>`;
-                lineVersions.push(b.lineManager.lineVersions[i]);
+                lines.push({
+                    index: i,
+                    version: b.lineManager.lineVersions[i],
+                    html: htmlContent + selectionHtml + markerHtml
+                });
             }
 
             const cursorLine = b.lineManager.getLineIndex(b.selectionHead);
@@ -422,17 +426,26 @@ function broadcastFrame() {
             return {
                 id,
                 version: b.version,
-                htmlFrameChunk,
-                lineVersions,
+                lines,
                 cursor: { line: cursorLine, column: cursorCol }
             };
         }).filter(Boolean);
+
+        // Spatial Inspector Data
+        const inspectorData = {
+            totalBuffers: buffers.size,
+            activeCount: activeBufferIds.length,
+            traceCount: traceRepo.records.length,
+            workerUptime: performance.now()
+        };
 
         self.postMessage({
             type: 'UI/FLUSH_FRAME',
             payload: {
                 focusedBufferId,
-                buffers: bufferSnapshots
+                buffers: bufferSnapshots,
+                traces: traceRepo.getHistory(),
+                inspector: inspectorData
             }
         });
     }, 'render');

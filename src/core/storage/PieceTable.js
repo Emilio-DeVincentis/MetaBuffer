@@ -85,6 +85,18 @@ export class PieceTable {
             } else {
                 const leftPiece = new Node(node.source, node.start, offsetInPiece);
                 const rightPiece = new Node(node.source, node.start + offsetInPiece, node.length - offsetInPiece);
+
+                for (const m of this.markers.values()) {
+                    if (m.node === node) {
+                        if (m.localOffset < offsetInPiece) {
+                            m.node = leftPiece;
+                        } else {
+                            m.node = rightPiece;
+                            m.localOffset -= offsetInPiece;
+                        }
+                    }
+                }
+
                 this._replaceNode(node, leftPiece);
                 this._insertAfter(leftPiece, newNode);
                 this._insertAfter(newNode, rightPiece);
@@ -279,11 +291,31 @@ export class PieceTable {
         if (startNode === endNode) {
             const leftLen = startOffset;
             const rightLen = startNode.length - endOffset;
-            if (leftLen === 0 && rightLen === 0) this._removeNode(startNode);
-            else if (leftLen === 0) { startNode.start += endOffset; startNode.length = rightLen; }
-            else if (rightLen === 0) { startNode.length = leftLen; }
+            if (leftLen === 0 && rightLen === 0) {
+                this._clampMarkers(startNode, start, 0);
+                this._removeNode(startNode);
+            }
+            else if (leftLen === 0) {
+                this._clampMarkersInRange(startNode, 0, endOffset, 0);
+                startNode.start += endOffset;
+                startNode.length = rightLen;
+            }
+            else if (rightLen === 0) {
+                this._clampMarkersInRange(startNode, startOffset, startNode.length, startOffset);
+                startNode.length = leftLen;
+            }
             else {
                 const rightPiece = new Node(startNode.source, startNode.start + endOffset, rightLen);
+                for (const m of this.markers.values()) {
+                    if (m.node === startNode) {
+                        if (m.localOffset >= endOffset) {
+                            m.node = rightPiece;
+                            m.localOffset -= endOffset;
+                        } else if (m.localOffset > startOffset) {
+                            m.localOffset = startOffset;
+                        }
+                    }
+                }
                 startNode.length = leftLen;
                 this._insertAfter(startNode, rightPiece);
             }
@@ -425,8 +457,43 @@ export class PieceTable {
         }
     }
 
-    setMarker(id, offset, affinity = 'forward') { this.markers.set(id, { offset, affinity }); }
-    getMarkerOffset(id) { const m = this.markers.get(id); return m ? m.offset : null; }
-    _updateMarkersAfterInsert(io, len, old) { for (const [id, m] of this.markers) { const o = old.get(id); if (o === undefined) continue; let n = o; if (o > io || (o === io && m.affinity === 'forward')) n += len; m.offset = n; } }
-    _updateMarkersAfterDelete(doff, len, old) { const de = doff + len; for (const [id, m] of this.markers) { const o = old.get(id); if (o === undefined) continue; let n = o; if (o >= de) n -= len; else if (o > doff) n = doff; m.offset = n; } }
+    setMarker(id, offset, affinity = 'forward') {
+        const { node, offsetInPiece } = this._resolveOffset(offset);
+        this.markers.set(id, { node, localOffset: offsetInPiece, affinity });
+    }
+
+    getMarkerOffset(id) {
+        const m = this.markers.get(id);
+        if (!m) return null;
+        return this._getNodeOffset(m.node) + m.localOffset;
+    }
+
+    _getNodeOffset(node) {
+        let offset = node.leftSubtreeLength;
+        let curr = node;
+        while (curr.parent) {
+            if (curr === curr.parent.right) {
+                offset += curr.parent.leftSubtreeLength + curr.parent.length;
+            }
+            curr = curr.parent;
+        }
+        return offset;
+    }
+
+    _updateMarkersAfterInsert(offset, length, oldOffsets) {}
+    _updateMarkersAfterDelete(offset, length, oldOffsets) {}
+
+    _clampMarkers(node, absolutePos, localClamp = 0) {
+        for (const m of this.markers.values()) {
+            if (m.node === node) m.localOffset = localClamp;
+        }
+    }
+
+    _clampMarkersInRange(node, start, end, targetLocal) {
+        for (const m of this.markers.values()) {
+            if (m.node === node && m.localOffset >= start && m.localOffset < end) {
+                m.localOffset = targetLocal;
+            }
+        }
+    }
 }

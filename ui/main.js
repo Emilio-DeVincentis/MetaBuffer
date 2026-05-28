@@ -12,6 +12,12 @@ window.onload = async () => {
     if (saveBtn) {
         saveBtn.onclick = () => shell.saveState();
     }
+
+    const helpModal = document.getElementById('help-modal');
+    const closeHelpBtn = document.getElementById('btn-close-help');
+    if (closeHelpBtn && helpModal) {
+        closeHelpBtn.onclick = () => helpModal.classList.add('hidden');
+    }
 };
 
 window.addEventListener('keydown', (e) => {
@@ -35,6 +41,10 @@ window.addEventListener('keydown', (e) => {
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault();
             shell.focusPrev();
+        } else if (e.key === '?' || e.key === '/') {
+            e.preventDefault();
+            const helpModal = document.getElementById('help-modal');
+            if (helpModal) helpModal.classList.toggle('hidden');
         }
     }
 });
